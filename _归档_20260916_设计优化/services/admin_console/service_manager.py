@@ -6,117 +6,54 @@ from pathlib import Path
 from typing import Optional
 
 # 白名单：只允许操作这些服务名
-# ⚠️ 一致性修正（设计复查发现）：
-#   旧版 `_systemd_map` 把 `webhook` 映射到不存在的 `research-webhook`、
-#   把 `diet_llm_queue` 映射到不存在的 `research-diet-llm`，且
-#   `survey_email` / `diet_email` / `data_dashboard` / 三个 sync 均无映射
-#   → 控制台「进程开关」对这些服务实际不可用（systemctl 报 unit not found）。
-#   现改为**单一真源**：每个条目的 `unit` 就是 systemd 的真实单元名，
-#   并显式声明 `kind`（service=常驻 / timer=定时 / none=无单元）。
 SERVICE_WHITELIST = {
     "survey_feedback": {
         "label": "问卷反馈页面",
-        "unit": "research-survey-feedback",
-        "kind": "service",
         "port": 8000,
         "workdir": "sjtu_survey_pro",
         "cmd": ["python3", "feedback_server.py", "8000", "8080"],
     },
     "diet_feedback": {
         "label": "饮食反馈页面",
-        "unit": "research-diet-feedback",
-        "kind": "service",
         "port": 8001,
         "workdir": "diet_survey",
         "cmd": ["python3", "diet_feedback_server.py", "8001"],
     },
     "webhook": {
         "label": "Webhook 接收器",
-        "unit": "research-diet-webhook",
-        "kind": "service",
         "port": 9876,
         "workdir": "diet_survey",
         "cmd": ["python3", "webhook_listener.py", "9876"],
     },
     "diet_llm_queue": {
         "label": "LLM 分析队列",
-        "unit": "research-diet-llm-queue",
-        "kind": "service",
         "port": -1,
         "workdir": "diet_survey",
         "cmd": ["python3", "diet_llm_queue.py"],
     },
     "diet_email": {
         "label": "饮食邮件守护进程",
-        "unit": None,               # 无独立单元：邮件发送由队列 worker 内联完成
-        "kind": "none",
         "port": -1,
         "workdir": "diet_survey",
         "cmd": ["python3", "diet_email_feedback.py", "daemon"],
     },
     "survey_email": {
         "label": "问卷邮件守护进程",
-        "unit": None,               # 无独立单元：邮件发送由 survey_pipeline 内联完成
-        "kind": "none",
         "port": -1,
         "workdir": "sjtu_survey_pro",
         "cmd": ["python3", "email_feedback.py", "daemon"],
     },
     "admin_console": {
         "label": "管理控制台（自身）",
-        "unit": "research-admin-console",
-        "kind": "service",
         "port": 9000,
         "workdir": "",
         "cmd": [],
     },
-    "data_dashboard": {
-        "label": "数据看板",
-        "unit": "research-data-dashboard",
-        "kind": "service",
-        "port": 8090,
-        "workdir": "data_dashboard",
-        "cmd": ["python3", "app.py"],
-    },
-    "survey_sync": {
-        "label": "问卷同步（定时）",
-        "unit": "research-survey-sync.timer",
-        "kind": "timer",
-        "port": -1,
-        "workdir": "sjtu_survey_pro",
-        "cmd": ["python3", "survey_sync_cron.py"],
-    },
-    "diet_sync": {
-        "label": "饮食同步（定时）",
-        "unit": "research-diet-sync.timer",
-        "kind": "timer",
-        "port": -1,
-        "workdir": "diet_survey",
-        "cmd": ["python3", "diet_sync_cron.py"],
-    },
     "exercise_sync": {
-        "label": "运动问卷同步（定时）",
-        "unit": "research-exercise-sync.timer",
-        "kind": "timer",
+        "label": "运动问卷同步",
         "port": -1,
         "workdir": "exercise_survey",
         "cmd": ["python3", "exercise_sync_cron.py"],
-    },
-    "microbiome_import": {
-        "label": "菌群数据导入（定时）",
-        "unit": "research-microbiome-import.timer",
-        "kind": "timer",
-        "port": -1,
-        "workdir": "microbiome",
-        "cmd": ["python3", "import_microbiome.py"],
-    },
-    "health_monitor": {
-        "label": "健康巡检（定时）",
-        "unit": "research-health-monitor.timer",
-        "kind": "timer",
-        "port": -1,
-        "workdir": "",
-        "cmd": ["python3", "scripts/health_monitor.py", "--quiet"],
     },
 }
 
@@ -130,8 +67,12 @@ class ServiceManager:
         self._pid_dir = Path(app_base) / ".console_pids"
         if not self.dry_run:
             self._pid_dir.mkdir(parents=True, exist_ok=True)
-        self._systemd_map = {k: (v.get("unit"), v.get("kind", "service"))
-                             for k, v in SERVICE_WHITELIST.items()}
+        self._systemd_map = {
+            "survey_feedback": "research-survey-feedback",
+            "diet_feedback": "research-diet-feedback",
+            "webhook": "research-webhook",
+            "diet_llm_queue": "research-diet-llm",
+        }
 
     def _systemd_available(self) -> bool:
         """检查 systemd 是否可用"""
@@ -145,12 +86,7 @@ class ServiceManager:
             return False
 
     def _systemd_unit(self, service: str) -> Optional[str]:
-        """返回该服务对应的 systemd 单元名（以 .timer 结尾者即为定时单元）。"""
-        return self._systemd_map.get(service, (None, "service"))[0]
-
-    def _unit_kind(self, service: str) -> str:
-        """service=常驻 | timer=定时 | none=无独立单元"""
-        return self._systemd_map.get(service, (None, "service"))[1]
+        return self._systemd_map.get(service)
 
     def _pid_file(self, service: str) -> Path:
         return self._pid_dir / f"{service}.pid"
@@ -167,8 +103,6 @@ class ServiceManager:
         result = {
             "name": service,
             "label": info["label"],
-            "unit": info.get("unit"),
-            "kind": info.get("kind", "service"),
             "port": info["port"],
             "active": "inactive",
             "enabled": False,
@@ -176,9 +110,6 @@ class ServiceManager:
             "start_time": None,
             "memory_mb": None,
         }
-        # 无独立 systemd 单元的服务（如内联邮件发送）→ 只报告状态，不尝试 systemctl
-        if result["kind"] == "none":
-            result["note"] = "无独立单元（由其他服务内联执行）"
 
         if self.dry_run:
             result["active"] = "active" if self._dry_pid_exists(service) else "inactive"

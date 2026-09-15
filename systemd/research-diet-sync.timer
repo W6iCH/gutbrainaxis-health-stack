@@ -1,8 +1,10 @@
 # ────────────────────────────────────────────────────────────────────────────
-#  运动问卷同步定时器 — 每 15 分钟触发一次
+#  饮食问卷同步定时器 — 每 15 分钟触发一次
+#  周期来自 config/app.yaml → schedule.diet_sync_minutes
+#  （install.sh 会用 tools/appconfig.py --render-timers 生成 .d/ 覆盖片段）
 # ────────────────────────────────────────────────────────────────────────────
 [Unit]
-Description=Research Exercise Survey Sync Timer (every 15 min)
+Description=Research Diet Survey Sync Timer (every 15 min)
 Documentation=file://__APP_BASE__/docs/数据模型与存储.md
 
 [Timer]

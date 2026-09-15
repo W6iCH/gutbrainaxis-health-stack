@@ -8,7 +8,6 @@ import json
 import subprocess
 import shutil
 import socket
-import sys
 import time
 import secrets
 import sqlite3
@@ -321,104 +320,6 @@ def api_apply_ports():
     return jsonify(result)
 
 # ── 自检面板路由 ─────────────────────────────────────────────────────
-# ── 自检（复用 tools/selfcheck.py 的同一后端）─────────────────────────
-# 设计要点：控制台**不再另写一套探活逻辑**，而是直接 import 与 CLI
-# 完全相同的 `tools/selfcheck.py`，保证「页面看到的」与「CI 跑的」一致。
-
-def _load_selfcheck():
-    """按 APP_BASE/tools 与包内 tools 两个位置尝试加载 selfcheck 后端。"""
-    for cand in (Path(APP_BASE) / "tools", BASE_DIR.parent / "tools"):
-        if (cand / "selfcheck.py").exists():
-            p = str(cand)
-            if p not in sys.path:
-                sys.path.insert(0, p)
-            import importlib
-            import selfcheck as _sc
-            importlib.reload(_sc)
-            return _sc
-    return None
-
-
-def _selfcheck_kwargs():
-    only = [g for g in (request.args.get("only") or "").split(",") if g.strip()]
-    skip = [g for g in (request.args.get("skip") or "").split(",") if g.strip()]
-    external = request.args.get("external")
-    cfg_path = "/etc/research-app/app.yaml"
-    try:
-        import appconfig as _ac
-        cfg, _errs = _ac.try_load(cfg_path)
-    except Exception:                             # noqa: BLE001
-        cfg = None
-    return {"cfg": cfg, "cfg_path": cfg_path, "only": only, "skip": skip,
-            "external": (False if external == "0" else None)}
-
-
-@app.route("/api/selfcheck")
-def api_selfcheck():
-    """GET /api/selfcheck → 结构化自检结果（与 tools/selfcheck.py --json 一致）。"""
-    sc = _load_selfcheck()
-    if sc is None:
-        return jsonify({"ok": False,
-                        "error": f"selfcheck.py 未安装到 {APP_BASE}/tools/"}), 500
-    return jsonify(sc.run_all(**_selfcheck_kwargs()))
-
-
-@app.route("/api/selfcheck/run", methods=["POST"])
-def api_selfcheck_run():
-    """POST /api/selfcheck/run → 运行自检并记审计。"""
-    try:
-        audit_logger.log(session.get("user", "?"), "selfcheck.run", "-", "自检")
-    except Exception:                             # noqa: BLE001
-        pass
-    return api_selfcheck()
-
-
-@app.route("/selfcheck")
-def selfcheck_page():
-    """服务端渲染的自检页（与 /api/selfcheck 同一后端、同一结果）。"""
-    sc = _load_selfcheck()
-    if sc is None:
-        return f"<h3>自检后端未安装</h3><p>请确认 {APP_BASE}/tools/selfcheck.py 存在。</p>", 500
-    result = sc.run_all(**_selfcheck_kwargs())
-    icon = {"ok": "✅", "fail": "❌", "skip": "⏭️"}
-    rows, cur = [], None
-    for it in result["items"]:
-        if it["group"] != cur:
-            cur = it["group"]
-            rows.append(f'<tr class="grp"><td colspan="3">{cur}</td></tr>')
-        advice = (f'<div class="advice">💡 {it["advice"]}</div>'
-                  if it["status"] == "fail" and it["advice"] else "")
-        rows.append(f'<tr class="{it["status"]}"><td>{icon.get(it["status"],"?")}</td>'
-                    f'<td>{it["title"]}{advice}</td><td>{it["detail"]}</td></tr>')
-    s = result["summary"]
-    banner = ("#e8f5e9;color:#1b5e20" if result["ok"] else "#ffebee;color:#b71c1c")
-    return f"""<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">
-<title>自检 — 管理控制台</title><style>
-body{{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;margin:24px;color:#222}}
-table{{border-collapse:collapse;width:100%;font-size:13px}}
-td,th{{border-bottom:1px solid #eee;padding:6px 8px;vertical-align:top;text-align:left}}
-tr.grp td{{background:#f5f7ff;font-weight:600;color:#444}}
-tr.fail{{background:#fff5f5}} tr.skip{{color:#888}}
-.advice{{font-size:12px;color:#b26a00;margin-top:2px}}
-.banner{{padding:10px 14px;border-radius:8px;background:{banner};margin:12px 0}}
-button{{padding:6px 14px;border-radius:6px;border:1px solid #ccc;background:#fff;cursor:pointer}}
-code{{background:#f4f4f4;padding:1px 5px;border-radius:4px}}
-</style></head><body>
-<h2>🩺 系统自检</h2>
-<div class="banner">通过 <b>{s['ok']}</b> ｜ 失败 <b>{s['fail']}</b> ｜ 跳过 <b>{s['skip']}</b>
- ｜ 共 <b>{s['total']}</b> 项 ｜ 耗时 {result['meta']['duration_ms']} ms<br>
- 主机 {result['meta']['host']} ｜ 配置 <code>{result['meta']['config']}</code></div>
-<p><button onclick="location.reload()">重新自检</button>
- &nbsp;<code>GET /api/selfcheck?only=config</code>
- &nbsp;<code>POST /api/selfcheck/run</code>
- &nbsp;<a href="/">← 返回控制台</a></p>
-<table><thead><tr><th></th><th>检查项</th><th>结果</th></tr></thead>
-<tbody>{''.join(rows)}</tbody></table>
-<p style="color:#888;font-size:12px;margin-top:18px">与命令行
- <code>python3 tools/selfcheck.py</code> 使用同一后端；退出码 0=全部通过。</p>
-</body></html>"""
-
-
 @app.route("/api/health")
 def api_health():
     services = health.probe_all()
@@ -493,30 +394,6 @@ def api_system_info():
     return jsonify(info)
 
 # ── 健康探针 ─────────────────────────────────────────────────────────
-@app.route("/healthz")
-def healthz():
-    """统一健康探针：/healthz（selftest 与反代统一使用本端点）。"""
-    checks, ok = {}, True
-    try:
-        checks["config"] = {
-            "file": str(CONFIG_DIR / "console.env"),
-            "exists": (CONFIG_DIR / "console.env").exists(),
-        }
-        checks["audit_log"] = {
-            "dir": str(LOG_DIR), "writable": os.access(str(LOG_DIR), os.W_OK),
-        }
-    except Exception as e:                        # noqa: BLE001
-        checks["error"] = str(e)
-        ok = False
-    return jsonify({
-        "status": "ok" if ok else "degraded",
-        "service": "admin-console",
-        "pid": os.getpid(),
-        "checks": checks,
-        "time": datetime.now().isoformat(timespec="seconds"),
-    }), (200 if ok else 503)
-
-
 @app.route("/health")
 def health_check():
     return jsonify({"status": "ok", "time": datetime.now().isoformat()})

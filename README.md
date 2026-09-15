@@ -37,16 +37,21 @@
 | 服务 | 目录 | 入口 | 默认端口 | 说明 |
 |---|---|---|---|---|
 | 问卷反馈 | `services/sjtu_survey_pro` | `feedback_server.py` | 8000 / 8080 | 计分 + 个人报告 |
-| 问卷同步 | `services/sjtu_survey_pro` | `survey_sync_cron.py` | — (timer) | 15 分钟增量同步 |
-| 问卷邮件 | `services/sjtu_survey_pro` | `email_feedback.py` | — (daemon) | 队列 + 退避重试 |
+| 问卷同步 | `services/sjtu_survey_pro` | `survey_sync_cron.py` | — (timer) | 每小时增量同步 |
+| 问卷邮件 | `services/sjtu_survey_pro` | `email_feedback.py` | — (内联) | 队列 + 退避重试 |
 | 饮食反馈 | `services/diet_survey` | `diet_feedback_server.py` | 8001 | 饮食建议报告 |
+| 饮食同步 | `services/diet_survey` | `diet_sync_cron.py` | — (timer) | **本轮新增排程**，每 15 分钟 |
 | 饮食 Webhook | `services/diet_survey` | `webhook_listener.py` | 9876 | 接收提交事件 |
 | 饮食 LLM | `services/diet_survey` | `diet_llm_queue.py` | — (worker) | 营养分析队列 |
-| 运动同步 | `services/exercise_survey` | `exercise_sync_cron.py` | — (timer) | 15 分钟增量同步 |
+| 运动同步 | `services/exercise_survey` | `exercise_sync_cron.py` | — (timer) | 每 15 分钟增量同步 |
 | 数据看板 | `services/data_dashboard` | `app.py` | 8090 | 研究者看板 |
-| 管理控制台 | `services/admin_console` | `app.py` | 9000 | **本轮新增**，见 §5 |
+| 每日报告 | `services/feedback` | `daily_report.py` | — (timer) | **本轮新增排程**，默认 08:30 |
+| 二期菌群 | `services/microbiome` | `import_microbiome.py` | — (timer) | 宏基因组/SCFA/炎症因子导入 |
+| 管理控制台 | `services/admin_console` | `app.py` | 9000 | 含「自检」页 |
 
-> 端口都可在 `config/console.env` 或控制台界面里改，控制台会做**冲突检测**并重新生成 Nginx 配置。
+> 单元总数：**13 个 service + 7 个 timer**，逐条清单见 [`功能与进程清单.md`](功能与进程清单.md)。
+> 端口都可在统一配置 `config/app.yaml`（→ `/etc/research-app/app.yaml`）或控制台界面里改，
+> 控制台会做**冲突检测**并重新生成 Nginx 配置。
 
 ## 3. 三步安装
 
@@ -100,10 +105,11 @@ sudo bash install.sh
 
 | 模块 | 能力 |
 |---|---|
-| 配置管理 | 读写 `.env`，端口/域名/路径/邮箱告警/API key，带校验与「恢复默认」 |
-| 进程开关 | 一键 start / stop / restart / enable / disable，实时状态（systemd） |
+| 配置管理 | 读写在统一配置 `app.yaml` 下派生的控制台配置，端口/域名/路径/邮箱告警/API key，带校验与「恢复默认」 |
+| 进程开关 | 一键 start / stop / restart / enable / disable，实时状态（systemd 或 timer） |
 | 端口映射 | 可视化改端口与反代映射 → 变更预览 → `nginx -t` → reload，冲突检测 + 自动回滚 |
 | 自检面板 | 服务探活、日志尾查看、数据库可读写检查 |
+| **自检**（本轮新增） | `/selfcheck` 页 + `/api/selfcheck`，复用 `tools/selfcheck.py` 同一后端 |
 | 审计 | 所有写操作记入审计日志 |
 
 技术选型、鉴权方式、接口清单见 [`02_控制台/设计说明.md`](02_控制台/设计说明.md) 与
@@ -132,7 +138,138 @@ VSI/GSRS 量程错误、PSQI 成分算法不符、WHOQOL-BREF 量纲混用等）
 - 控制台默认仅本机/内网可访问，**不要直接暴露公网**。
 - 量表条目文本与计分规则各有其使用条款，发布前请确认授权（见 `LICENSE` 说明）。
 
-## 8. 文档索引
+## 8. 默认人群数据（本轮新增）
+
+个人报告里的「该分数在同侨人群中的位置」正态曲线与百分位，需要一个**人群基线**。
+此前仓库只提供一个数值全为占位（`mean=0, sd=1`）的示例文件，图表实际无意义。
+本轮把基线改为**内置默认数据**：
+
+| 项 | 值 |
+|---|---|
+| 文件 | `services/sjtu_survey_pro/population_stats.default.json` |
+| 来源 | `13_问卷原始数据_20260916/raw/量表问卷_226份.json`（226 份 / 67 名学生） |
+| 口径 | **原生编码口径（Edition B）**，条目库 `14_评分标准/03_条目库_修正/survey_scoring_native.py`（只读引用） |
+| 规模 | 16 个量表键 × 全样本 + 三个时点（T0/T1/T2 = 74/74/78）；每单元含 `n / mean / sd / min / max / median / q05…q95` |
+| 隐私 | **只含聚合统计，绝不含任何个体作答行**；样本量 < 5 的单元整体不输出 |
+| 可复现 | `python3 tools/build_population_stats.py`（只读原始问卷 + 权威条目库） |
+
+程序读取顺序（`population_charts._load()`）：
+
+1. `services/sjtu_survey_pro/population_stats.json` —— **本地覆盖**（部署方用真实基线替换）
+2. `services/sjtu_survey_pro/population_stats.default.json` —— 内置默认（本文件）
+
+**计分口径一致性**：基线文件同时包含 `2.0-official-rules` 与 `3.0-native-ordinal` 两个口径块，
+程序按 `app.scoring_version` 选择**与自身计分相同的块**，避免「分数一套口径、基线另一套口径」
+导致的百分位失真。默认推荐 `3.0-native-ordinal`。
+
+**替换为你自己的基线**：
+
+```bash
+# ① 用你自己的原始问卷生成
+python3 tools/build_population_stats.py --raw <你的问卷.json> --out population_stats.json
+# ② 或直接手写一个同结构 JSON 放到 services/sjtu_survey_pro/population_stats.json
+#    必须含：source / n / computed_with / scales.<量表>.{mean,sd,min,max}
+```
+
+> ⚠️ 基线必须用与程序**同一版计分规则**计算，否则百分位失真。
+> 若两个文件都不存在，图表会自动跳过（返回空串），不影响计分与报告生成。
+
+---
+
+## 9. 统一配置（本轮新增）
+
+所有可配置项集中在**一个文件**：`config/app.yaml`（安装后为 `/etc/research-app/app.yaml`），
+由 JSON Schema `config/app.schema.json` 做**启动即校验**。
+
+覆盖范围：端口 / 域名 / DNS / 反向代理、各服务目录与入口、数据库路径、SMTP 与告警、
+LLM（主+备）、三个问卷平台 Token、调度周期、日志级别、备份策略、自检开关、二期菌群存储。
+
+**密钥分离**：`app.yaml` 里只写 `"${SMTP_PASSWORD}"` 这类引用；真实值放在
+`/etc/research-app/secrets.env`（0600）。**仓库内零密钥**。
+
+```bash
+PY=~/.openclaw/workspace/.venv-diet/bin/python3
+
+# 校验（缺项 / 类型错 / 越界 / 未替换占位符 → 逐条报出键位置，退出码 1）
+$PY tools/appconfig.py --config /etc/research-app/app.yaml --check
+
+# 渲染 systemd 环境文件（由 app.yaml 生成，不要手改 /etc/research-app/env）
+$PY tools/appconfig.py --config /etc/research-app/app.yaml --render-env /etc/research-app/env
+
+# 渲染 timer 周期覆盖片段（来自 schedule.*）
+$PY tools/appconfig.py --config /etc/research-app/app.yaml --render-timers /etc/systemd/system
+```
+
+安装脚本会自动完成上述渲染；你只需改 `app.yaml`（并在 `secrets.env` 填密钥）后重启服务。
+
+---
+
+## 10. 自检（本轮新增）
+
+统一的系统自检，**命令行与管理控制台共用同一后端**（`tools/selfcheck.py`）。
+
+```bash
+PY=~/.openclaw/workspace/.venv-diet/bin/python3
+sudo bash verify.sh                      # 安装后自检（封装 selfcheck.py）
+$PY tools/selfcheck.py                   # 全部检查
+$PY tools/selfcheck.py --json            # 机器可读
+$PY tools/selfcheck.py --only config,database
+$PY tools/selfcheck.py --no-external     # 离线环境（不探外网）
+$PY tools/selfcheck.py --report logs/selfcheck.json
+```
+
+**覆盖 12 组**：平台与环境 / 配置齐备性 / 目录与权限 / systemd 单元 /
+systemd timer / 端口监听 / HTTP 探活 / 数据库（可读・可写・schema）/
+Nginx（`-t` + 站点启用）/ 外部依赖（问卷 API・SMTP・LLM，**串行限流**）/
+磁盘余量 / 人口基线 + 模拟数据残留 + 日志轮转。
+
+**输出语义**：每项为 `通过 / 失败 / 跳过`，失败项附**修复建议**；
+跳过项给出原因（如非 Linux、未安装 nginx）。**退出码** 0=全过 / 1=有失败 / 2=致命，可直接用于 CI。
+
+控制台入口：浏览器打开 `http://<内网IP>:9000/selfcheck`，或调 `GET /api/selfcheck`。
+每个 HTTP 服务另提供统一探针 `GET /healthz`（含数据库可读性检查）。
+
+---
+
+## 11. 模拟数据测试（本轮新增）
+
+用于在**不接触真实数据**的前提下验证全部功能链路，测后**必须清除**。
+
+```bash
+PY=~/.openclaw/workspace/.venv-diet/bin/python3
+
+# 注入模拟数据并端到端验证（问卷收数→计分→入库→邮件队列→LLM 队列→看板→控制台→自检）
+$PY tools/seed_mock_data.py  --root /tmp/gba-test --n 3 --report /tmp/seed.json
+
+# 清除全部模拟数据并**校验清除干净**（输出前后对照 + 残留复查 + 证据 JSON）
+$PY tools/clear_mock_data.py --root /tmp/gba-test --report /tmp/clear.json
+```
+
+* 模拟数据一律带 `MOCK-` 前缀；`clear_mock_data.py` 退出码 0 才代表清干净。
+* 清除含：库记录、LLM 队列任务、含标记的日志行，并做 `WAL checkpoint + VACUUM`。
+* 完整测试报告与证据： [`测试报告_模拟数据.md`](测试报告_模拟数据.md)、`_测试证据_20260916/`。
+
+---
+
+## 12. 二期菌群数据（本轮新增，预留）
+
+宏基因组 / SCFA / 炎症因子有独立库与导入接口，与一期数据解耦。
+
+```bash
+# 把 CSV 放进投递目录（每小时由 timer 自动导入）
+sudo cp your_data.csv /opt/gutbrainaxis/microbiome/import/
+# 或手动导入
+$PY services/microbiome/import_microbiome.py --file your_data.csv --omics-type scfa
+```
+
+* 支持**长表**（`sample_id,…,feature,value,unit`）与**宽表**（指标为列名）。
+* 幂等：同文件 sha256 去重；`(sample_id, omics_type)` / `(sample_id, feature, method)` 业务主键 upsert。
+* 未知列自动进 `extras` JSON，**不丢数据**；导入留痕在 `omics_import_log`。
+* 字段定义与保留策略： [`docs/数据模型与存储.md`](docs/数据模型与存储.md)。
+
+---
+
+## 13. 文档索引
 
 | 文档 | 内容 |
 |---|---|
@@ -141,6 +278,11 @@ VSI/GSRS 量程错误、PSQI 成分算法不符、WHOQOL-BREF 量纲混用等）
 | [`docs/端口与反向代理配置.md`](docs/端口与反向代理配置.md) | 端口规划、Nginx 模板、改端口流程 |
 | [`docs/常见故障排查.md`](docs/常见故障排查.md) | 症状 → 定位 → 处置 |
 | [`docs/升级备份与回滚.md`](docs/升级备份与回滚.md) | 升级、备份、回滚、卸载 |
+| [`docs/数据模型与存储.md`](docs/数据模型与存储.md) | 逐库逐表字段、存放路径、保留策略 |
+| [`功能与进程清单.md`](功能与进程清单.md) | 全部功能与 systemd 单元/端口/落点 |
+| [`设计复查_问题清单.md`](设计复查_问题清单.md) | 本轮复查发现的问题、严重度、处理情况 |
+| [`变更清单.md`](变更清单.md) | 本轮设计与功能改动逐条 |
+| [`测试报告_模拟数据.md`](测试报告_模拟数据.md) | 模拟数据测试范围、结果、清除证据 |
 | [`02_控制台/设计说明.md`](02_控制台/设计说明.md) | 控制台选型与设计 |
 | [`01_评分修复/审计报告.md`](01_评分修复/审计报告.md) | 计分逻辑完整审计 |
 
@@ -167,6 +309,15 @@ python3 01_评分修复/tests/test_scoring.py
 bash -n install.sh uninstall.sh verify.sh
 bash install.sh --dry-run --prefix=/tmp/dryrun-gba
 bash install.sh --dry-run --prefix=/tmp/dryrun-gba   # 再跑一次，输出应完全一致
+
+# ④ 统一配置校验（应报出未替换的占位符）
+python3 tools/appconfig.py --config config/app.yaml.example --check || true
+
+# ⑤ 人群基线可重建（原生口径未映射应为 0）
+python3 tools/build_population_stats.py --dry-run
+
+# ⑥ 模拟数据残留检查（应无输出）
+grep -rl "MOCK-" services scripts tools 2>/dev/null | grep -v "\.py$" || echo "✅ 无残留"
 ```
 
 清单（逐条确认）：
@@ -175,8 +326,11 @@ bash install.sh --dry-run --prefix=/tmp/dryrun-gba   # 再跑一次，输出应�
 - [ ] 无真实 SMTP 密码 / API key / rclone token / cloudflared 凭据（一律占位符）
 - [ ] 无姓名 / 学号 / 邮箱 / 提交编号（含数据分析导出）
 - [ ] 无 `venv/` / `__pycache__/` / `*.bak` / `.DS_Store`
-- [ ] `config/*.example` 已随仓库发布（模板可被跟踪）
-- [ ] `population_stats.json` **未**入库，仅提供 `.example` 模板
+- [ ] **无硬编码问卷 Token**（应为 `${WJX_*_TOKEN}` 或环境变量）
+- [ ] **无模拟数据残留**（`MOCK-` 在非源码文件中零命中）
+- [ ] `config/*.example` 与 `config/app.yaml.example` + `app.schema.json` 已随仓库发布
+- [ ] `population_stats.json` **未**入库；仅 `population_stats.default.json`（**匿名聚合**）随包发布
+- [ ] `secrets.env` / `app.yaml` 实体 **未**入库
 - [ ] 已确认仓库可见性（建议 **private**）与 `LICENSE` 授权
 
 > 说明：`00_上线与决策.md`、`00_评分错误审计_初查.md` 属内部工作留档（含本地绝对路径），

@@ -1,14 +1,14 @@
 # ────────────────────────────────────────────────────────────────────────────
-#  运动问卷同步定时器 — 每 15 分钟触发一次
+#  每日报告定时器 — 每天 08:30 触发
+#  触发时间来自 config/app.yaml → schedule.daily_report_at
 # ────────────────────────────────────────────────────────────────────────────
 [Unit]
-Description=Research Exercise Survey Sync Timer (every 15 min)
-Documentation=file://__APP_BASE__/docs/数据模型与存储.md
+Description=Research Daily Report Timer (daily)
 
 [Timer]
-OnCalendar=*:0/15
+OnCalendar=*-*-* 08:30:00
 Persistent=true
-RandomizedDelaySec=60
+RandomizedDelaySec=120
 
 [Install]
 WantedBy=timers.target

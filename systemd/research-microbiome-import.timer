@@ -1,14 +1,14 @@
 # ────────────────────────────────────────────────────────────────────────────
-#  运动问卷同步定时器 — 每 15 分钟触发一次
+#  菌群数据导入定时器 — 每小时触发一次
+#  周期来自 config/app.yaml → schedule.microbiome_import_minutes
 # ────────────────────────────────────────────────────────────────────────────
 [Unit]
-Description=Research Exercise Survey Sync Timer (every 15 min)
-Documentation=file://__APP_BASE__/docs/数据模型与存储.md
+Description=Research Microbiome Import Timer (every hour)
 
 [Timer]
-OnCalendar=*:0/15
+OnCalendar=hourly
 Persistent=true
-RandomizedDelaySec=60
+RandomizedDelaySec=300
 
 [Install]
 WantedBy=timers.target

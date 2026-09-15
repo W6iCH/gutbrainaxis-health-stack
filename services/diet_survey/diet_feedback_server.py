@@ -25,6 +25,8 @@ from diet_database import get_submission_by_answer_id, get_conn
 
 DEFAULT_PORT = 8001
 TRIGGER_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "feedback_trigger.log")
+# 日志目录必须存在：旧实现在 logs/ 缺失时写触发器日志会抛 FileNotFoundError
+os.makedirs(os.path.dirname(TRIGGER_LOG), exist_ok=True)
 
 
 def log_trigger(msg):
@@ -394,6 +396,24 @@ class DietFeedbackHandler(BaseHTTPRequestHandler):
         elif path == "/health":
             self._send_json({"status": "ok", "service": "diet-feedback"})
             return
+        elif path == "/healthz":
+            # 统一健康探针：含 diet DB 可读性检查
+            checks, ok = {}, True
+            try:
+                import diet_database as _DDB
+                conn = _DDB.get_conn()
+                n = conn.execute("SELECT COUNT(*) FROM submissions").fetchone()[0]
+                conn.close()
+                checks["diet_db"] = {"readable": True, "submissions": n}
+            except Exception as e:              # noqa: BLE001
+                checks["diet_db"] = {"readable": False, "error": str(e)}
+                ok = False
+            self._send_json({"status": "ok" if ok else "degraded",
+                             "service": "diet-feedback",
+                             "pid": os.getpid(), "checks": checks,
+                             "time": datetime.now().isoformat(timespec="seconds")},
+                            status=200 if ok else 503)
+            return
         elif path == "/ping":
             self._send_text("pong")
             return
@@ -439,11 +459,12 @@ class DietFeedbackHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(html.encode("utf-8"))
 
-    def _send_json(self, data):
-        self.send_response(200)
+    def _send_json(self, data, status: int = 200):
+        self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(json.dumps(data).encode("utf-8"))))
         self.end_headers()
-        self.wfile.write(json.dumps(data).encode("utf-8"))
+        self.wfile.write(json.dumps(data, ensure_ascii=False).encode("utf-8"))
 
     def _send_text(self, text):
         self.send_response(200)

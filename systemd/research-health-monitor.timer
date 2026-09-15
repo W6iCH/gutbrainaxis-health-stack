@@ -3,7 +3,7 @@
 # ────────────────────────────────────────────────────────────────────────────
 [Unit]
 Description=Research Health Monitor Timer (every 30 min)
-Documentation=file://__APP_BASE__/docs/07_监控系统.md
+Documentation=file://__APP_BASE__/docs/常见故障排查.md
 
 [Timer]
 OnCalendar=*:0/30

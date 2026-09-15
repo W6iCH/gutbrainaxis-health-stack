@@ -39,7 +39,7 @@ cp_dry() {
 
 mkdir_dry() {
   if [ "$DRY_RUN" = "true" ]; then
-    echo -e "${YELLOW}[DRY-RUN]${NC} mkdir $*"
+    echo -e "${YELLOW}[DRY-RUN]${NC} mkdir -p $*"
   else
     mkdir -p "$@"
   fi
@@ -81,45 +81,18 @@ systemctl_dry() {
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY_RUN="true"; shift ;;
-    --dry-run-prefix=*) DRY_RUN_PREFIX="${1#*=}"; shift ;;
-    --dry-run-prefix) DRY_RUN_PREFIX="$2"; shift 2 ;;
     --prefix=*) INSTALL_ROOT="${1#*=}"; shift ;;
     --prefix) INSTALL_ROOT="$2"; shift 2 ;;
     -h|--help)
       echo "用法: sudo bash install.sh [--dry-run] [--prefix=/opt/gutbrainaxis]"
-      echo "      sudo bash install.sh --dry-run [--dry-run-prefix=/tmp/gutbrainaxis-dryrun]"
       exit 0 ;;
     *) die "未知参数: $1" ;;
   esac
 done
 
-# ── 0. 权限检查 + dry-run 路径消歧 ───────────────────────────────────
-# ⚠️ 修正（设计复查发现）：旧版定义了 DRY_RUN_PREFIX 但**从未使用**，
-#    `--dry-run --prefix=/tmp/x` 会一边显示真实系统路径（/etc/systemd/...）、
-#    一边又声称“不修改系统”，语义二义。现统一：
-#      · 真实安装：SYSROOT 为空，路径就是真实系统路径。
-#      · dry-run ：所有系统级路径统一加上 DRY_RUN_PREFIX（默认 /tmp/…），
-#                  输出的就是“将要写入的确切位置”，且肯定不碰真实系统。
-if [ "$DRY_RUN" = "true" ] && [ -z "$DRY_RUN_PREFIX" ]; then
-  DRY_RUN_PREFIX="/tmp/gutbrainaxis-dryrun"
-fi
-SYSROOT=""
-if [ "$DRY_RUN" = "true" ]; then
-  SYSROOT="$DRY_RUN_PREFIX"
-  mkdir -p "$SYSROOT" 2>/dev/null || true
-fi
-ENV_DIR="$SYSROOT/etc/research-app"
-SYSTEMD_DIR="$SYSROOT/etc/systemd/system"
-NGINX_AVAIL_DIR="$SYSROOT/etc/nginx/sites-available"
-NGINX_ENABLED_DIR="$SYSROOT/etc/nginx/sites-enabled"
-LOGROTATE_DIR="$SYSROOT/etc/logrotate.d"
-RCLONE_DIR="$SYSROOT/root/.config/rclone"
-
+# ── 0. 权限检查 ──────────────────────────────────────────────────────────
 if [ "$(id -u)" -ne 0 ] && [ "$DRY_RUN" != "true" ]; then
   die "需要 root 权限。请使用 sudo bash install.sh 或切换到 root 用户执行。"
-fi
-if [ "$DRY_RUN" = "true" ]; then
-  warn "DRY-RUN 模式：不修改系统；系统级路径前缀为 ${SYSROOT}"
 fi
 
 # ── 1. 平台检测 ──────────────────────────────────────────────────────────
@@ -180,43 +153,17 @@ else
   echo "  ✅ venv 已存在，跳过创建"
 fi
 
-# ── 4. 复制 services / scripts / tools / docs / 配置模板 ──────────────
-log "复制服务代码与运行期脚本..."
+# ── 4. 复制 services ────────────────────────────────────────────────────
+log "复制服务代码..."
 # 仓库根目录（install.sh 位于仓库根）
 PACKAGE_DIR="$(cd "$(dirname "$0")" && pwd)"
 SERVICES_SRC="$PACKAGE_DIR/services"
 if [ -d "$SERVICES_SRC" ]; then
   dry "cp -r $SERVICES_SRC/* $INSTALL_ROOT/"
-  echo "  ✅ 服务代码已复制（含 microbiome/ 与 common/）"
+  echo "  ✅ 服务代码已复制"
 else
   die "services/ 目录不存在 ($SERVICES_SRC)"
 fi
-
-# ⚠️ 修正：旧版**只复制 services/**，但 systemd 单元的 ExecStart 指向
-#    __APP_BASE__/scripts/health_monitor.py、__APP_BASE__/scripts/rclone-backup.sh，
-#    并且自检/建库工具在 __APP_BASE__/tools/ —— 这些目录从未被安装，
-#    导致 research-health-monitor.timer 与 research-rclone-backup.timer
-#    装上即失败（unit 找不到脚本）。现一并安装。
-for sub in scripts tools docs; do
-  if [ -d "$PACKAGE_DIR/$sub" ]; then
-    dry "cp -r $PACKAGE_DIR/$sub $INSTALL_ROOT/"
-    echo "  ✅ $sub/ 已复制"
-  else
-    warn "$sub/ 不存在，跳过（相关 timer/自检可能不可用）"
-  fi
-done
-
-# 清理可能随包带出的编辑器/系统垃圾文件（.DS_Store / __pycache__ / *.pyc）
-if [ "$DRY_RUN" != "true" ]; then
-  find "$INSTALL_ROOT" -name '.DS_Store' -delete 2>/dev/null || true
-  find "$INSTALL_ROOT" -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null || true
-  find "$INSTALL_ROOT" -name '*.pyc' -delete 2>/dev/null || true
-fi
-
-# 创建数据目录
-for d in data logs backups microbiome microbiome/import; do
-  mkdir_dry -p "$INSTALL_ROOT/$d"
-done
 
 # ── 5. 安装 pip 依赖 ────────────────────────────────────────────────────
 log "安装 Python 依赖..."
@@ -250,92 +197,30 @@ log "生成配置文件..."
 CONFIG_SRC="$PACKAGE_DIR/config"
 mkdir_dry "$ENV_DIR"
 
-# ① 统一配置入口 app.yaml（单一真源）
-# ⚠️ 修正：旧版只生成 env，没有统一配置入口，也没有 schema 校验。
-APP_YAML="$ENV_DIR/app.yaml"
-if [ ! -f "$APP_YAML" ] && [ -f "$CONFIG_SRC/app.yaml.example" ]; then
-  dry "cp $CONFIG_SRC/app.yaml.example $APP_YAML"
-  # 把示例里的安装前缀替换为本次实际安装路径
-  if [ "$DRY_RUN" != "true" ]; then
-    sed -i.bak "s|/opt/gutbrainaxis|$INSTALL_ROOT|g" "$APP_YAML" 2>/dev/null || \
-      sed -i "s|/opt/gutbrainaxis|$INSTALL_ROOT|g" "$APP_YAML" 2>/dev/null || true
-    rm -f "$APP_YAML.bak"
-  fi
-  chmod_dry 644 "$APP_YAML"
-  echo "  ✅ 统一配置已生成: $APP_YAML（请修改 site.domain 与密钥）"
-fi
-
-# ② 密钥文件 secrets.env（0600）——真实密钥只存这里，不入库
-SECRETS_FILE="$ENV_DIR/secrets.env"
-if [ ! -f "$SECRETS_FILE" ] && [ "$DRY_RUN" != "true" ]; then
-  cat > "$SECRETS_FILE" <<'SECRETS_EOF'
-# 真实密钥 — 权限 0600，绝不入库
-# 由 app.yaml 里的 "${VAR}" 引用解析
-SMTP_USERNAME=
-SMTP_PASSWORD=__CHANGE_ME__
-SMTP_SENDER_EMAIL=
-SMTP_ADMIN_EMAIL=
-ALERT_SMTP_USERNAME=
-ALERT_SMTP_PASSWORD=__CHANGE_ME__
-ALERT_FROM=
-ALERT_TO=
-LLM_API_KEYS=__CHANGE_ME__
-LLM_BACKUP_API_KEY=__CHANGE_ME__
-WJX_SURVEY_TOKEN=__CHANGE_ME__
-WJX_DIET_TOKEN=__CHANGE_ME__
-WJX_EXERCISE_TOKEN=__CHANGE_ME__
-SECRETS_EOF
-  chmod_dry 600 "$SECRETS_FILE"
-  echo "  ✅ 密钥模板已生成: $SECRETS_FILE（0600）"
-fi
-
-# ③ 渲染 systemd 环境文件（由 app.yaml → env）
-# ⚠️ 修正：旧版直接 cp env.example → env，与 app.yaml 不联动；
-#    另 SECRET_KEY 的 sed 因为 env.example 根本没这个键而静默失败。
-env_file_path="$ENV_DIR/env"
-if [ "$DRY_RUN" = "true" ]; then
-  echo -e "${YELLOW}[DRY-RUN]${NC} 将由 app.yaml 渲染 $env_file_path"
-elif [ -f "$APP_YAML" ] && [ -f "$PACKAGE_DIR/tools/appconfig.py" ]; then
-  if APP_BASE="$INSTALL_ROOT" "$VENV_DIR/bin/python3" "$PACKAGE_DIR/tools/appconfig.py" \
-       --config "$APP_YAML" --secrets "$SECRETS_FILE" --no-strict \
-       --render-env "$env_file_path" >/dev/null 2>&1; then
-    echo "  ✅ 环境文件已由 app.yaml 渲染: $env_file_path"
-  else
-    warn "app.yaml 渲染失败，回退为直接复制 env.example"
-    cp "$CONFIG_SRC/env.example" "$env_file_path"
+# env 配置
+ENV_TARGET="$ENV_DIR/env"
+if [ ! -f "$ENV_TARGET" ]; then
+  if [ -f "$CONFIG_SRC/env.example" ]; then
+    dry "cp $CONFIG_SRC/env.example $ENV_TARGET"
+    # 生成随机 SECRET_KEY
+    if [ "$DRY_RUN" != "true" ] && [ ! -f "$ENV_TARGET.generated" ]; then
+      RANDOM_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+      # 只替换 env.example 中的 SECRET_KEY 占位符（不碰 LLM_API_KEYS 等）
+      sed -i '' "s/^SECRET_KEY=.*/SECRET_KEY=${RANDOM_KEY}/" "$ENV_TARGET" 2>/dev/null || \
+        sed -i "s/^SECRET_KEY=.*/SECRET_KEY=${RANDOM_KEY}/" "$ENV_TARGET" 2>/dev/null || true
+      touch "$ENV_TARGET.generated"
+    fi
+    chmod_dry 600 "$ENV_TARGET"
+    echo "  ✅ env 配置已生成: $ENV_TARGET"
   fi
 else
-  [ -f "$env_file_path" ] || cp "$CONFIG_SRC/env.example" "$env_file_path"
-fi
-chmod_dry 600 "$env_file_path" 2>/dev/null || true
-
-# ④ 控制台配置 console.env
-# ⚠️ 修正：旧版从未复制 console.env.example，控制台因此一直读不到配置。
-CONSOLE_ENV="$ENV_DIR/console.env"
-if [ ! -f "$CONSOLE_ENV" ] && [ -f "$CONFIG_SRC/console.env.example" ]; then
-  dry "cp $CONFIG_SRC/console.env.example $CONSOLE_ENV"
-  if [ "$DRY_RUN" != "true" ]; then
-    RANDOM_SECRET=$(python3 -c "import secrets; print(secrets.token_hex(32))")
-    RANDOM_PW=$(python3 -c "import secrets; print(secrets.token_urlsafe(16))")
-    sed -i.bak "s|^SECRET_KEY=.*|SECRET_KEY=${RANDOM_SECRET}|" "$CONSOLE_ENV" 2>/dev/null || \
-      sed -i "s|^SECRET_KEY=.*|SECRET_KEY=${RANDOM_SECRET}|" "$CONSOLE_ENV" 2>/dev/null || true
-    sed -i.bak "s|^CONSOLE_PASSWORD=.*|CONSOLE_PASSWORD=${RANDOM_PW}|" "$CONSOLE_ENV" 2>/dev/null || \
-      sed -i "s|^CONSOLE_PASSWORD=.*|CONSOLE_PASSWORD=${RANDOM_PW}|" "$CONSOLE_ENV" 2>/dev/null || true
-    rm -f "$CONSOLE_ENV.bak"
-    # 初始口令单独落盘（600），供首次登录
-    printf '%s\n' "$RANDOM_PW" > "$CONFIG_SRC/../config/initial_password.txt" 2>/dev/null || true
-    cp "$CONFIG_SRC/../config/initial_password.txt" "$ENV_DIR/initial_password.txt" 2>/dev/null || true
-    printf '%s\n' "$RANDOM_PW" > "$ENV_DIR/initial_password.txt"
-    chmod_dry 600 "$ENV_DIR/initial_password.txt"
-  fi
-  chmod_dry 600 "$CONSOLE_ENV"
-  echo "  ✅ 控制台配置已生成: $CONSOLE_ENV"
+  echo "  ✅ env 配置已存在，跳过"
 fi
 
 # rclone 配置
-RCLONE_TARGET="$RCLONE_DIR/rclone.conf"
+RCLONE_TARGET="/root/.config/rclone/rclone.conf"
 if [ -f "$CONFIG_SRC/rclone.conf.example" ] && [ ! -f "$RCLONE_TARGET" ]; then
-  mkdir_dry "$RCLONE_DIR"
+  mkdir_dry "/root/.config/rclone"
   dry "cp $CONFIG_SRC/rclone.conf.example $RCLONE_TARGET"
   chmod_dry 600 "$RCLONE_TARGET"
   echo "  ✅ rclone 配置模板已生成: $RCLONE_TARGET"
@@ -349,7 +234,7 @@ VENV_PYTHON="$VENV_DIR/bin/python3"
 for svc in "$SYSTEMD_SRC"/*.service; do
   [ -f "$svc" ] || continue
   SVC_NAME="$(basename "$svc")"
-  TARGET="$SYSTEMD_DIR/$SVC_NAME"
+  TARGET="/etc/systemd/system/$SVC_NAME"
 
   # 替换占位符
   if [ "$DRY_RUN" = "true" ]; then
@@ -365,7 +250,7 @@ done
 for tm in "$SYSTEMD_SRC"/*.timer; do
   [ -f "$tm" ] || continue
   TM_NAME="$(basename "$tm")"
-  TARGET="$SYSTEMD_DIR/$TM_NAME"
+  TARGET="/etc/systemd/system/$TM_NAME"
   if [ "$DRY_RUN" = "true" ]; then
     echo -e "${YELLOW}[DRY-RUN]${NC} 安装 timer: $TM_NAME"
   else
@@ -394,46 +279,6 @@ for svc_file in "$SYSTEMD_SRC"/*.service; do
   fi
 done
 
-# ── 8b. 日志轮转 + 按 app.yaml 渲染 timer 周期 ────────────────────────
-log "安装日志轮转与定时周期..."
-LR_SRC="$CONFIG_SRC/logrotate.research-app"
-if [ -f "$LR_SRC" ]; then
-  if [ "$DRY_RUN" = "true" ]; then
-    echo -e "${YELLOW}[DRY-RUN]${NC} 安装 $LOGROTATE_DIR/research-app"
-  else
-    mkdir -p "$LOGROTATE_DIR"
-    sed "s|__APP_BASE__|$INSTALL_ROOT|g; s|__SERVICE_USER__|$SERVICE_USER|g" \
-      "$LR_SRC" > "$LOGROTATE_DIR/research-app"
-    # 语法校验（logrotate -d 为 dry-run）
-    if logrotate -d "$LOGROTATE_DIR/research-app" >/dev/null 2>&1; then
-      echo "  ✅ 日志轮转已安装且语法正确（保留 14 份，按天）"
-    else
-      warn "logrotate 配置语法校验未通过，请手工检查 $LOGROTATE_DIR/research-app"
-    fi
-  fi
-else
-  warn "未找到 config/logrotate.research-app（日志将不轮转，可能撑满磁盘）"
-fi
-
-# 用 app.yaml 的 schedule.* 覆盖 timer 周期（systemd 支持 .d/ 片段覆盖）
-if [ "$DRY_RUN" = "true" ]; then
-  echo -e "${YELLOW}[DRY-RUN]${NC} 按 app.yaml schedule.* 生成 timer 周期片段"
-elif [ -f "$APP_YAML" ] && [ -f "$PACKAGE_DIR/tools/appconfig.py" ]; then
-  if "$VENV_DIR/bin/python3" "$PACKAGE_DIR/tools/appconfig.py" \
-       --config "$APP_YAML" --secrets "$SECRETS_FILE" --no-strict \
-       --render-timers "$SYSTEMD_DIR" >/dev/null 2>&1; then
-    echo "  ✅ timer 周期片段已按 app.yaml 生成（$SYSTEMD_DIR/*.timer.d/）"
-    dry "systemctl daemon-reload"
-    # 重新 enable/start timer，使新周期生效
-    for tm in "$SYSTEMD_SRC"/*.timer; do
-      [ -f "$tm" ] || continue
-      dry "systemctl restart $(basename "$tm")"
-    done
-  else
-    warn "timer 周期渲染失败，使用单元文件中的默认周期"
-  fi
-fi
-
 # ── 9. Nginx 配置 ──────────────────────────────────────────────────────
 log "安装 Nginx 配置..."
 NGINX_SRC="$PACKAGE_DIR/nginx"
@@ -441,13 +286,12 @@ NGINX_SRC="$PACKAGE_DIR/nginx"
 for conf in "$NGINX_SRC"/*.conf; do
   [ -f "$conf" ] || continue
   CONF_NAME="$(basename "$conf")"
-  TARGET="$NGINX_AVAIL_DIR/$CONF_NAME"
-  LINK="$NGINX_ENABLED_DIR/$CONF_NAME"
+  TARGET="/etc/nginx/sites-available/$CONF_NAME"
+  LINK="/etc/nginx/sites-enabled/$CONF_NAME"
 
   if [ "$DRY_RUN" = "true" ]; then
     echo -e "${YELLOW}[DRY-RUN]${NC} 安装: $CONF_NAME"
   else
-    mkdir -p "$NGINX_AVAIL_DIR" "$NGINX_ENABLED_DIR"
     sed "s|__LOG_DIR__|/var/log/nginx|g" "$conf" > "$TARGET"
     ln -sf "$TARGET" "$LINK"
     echo "  ✅ $CONF_NAME 已安装"
@@ -459,7 +303,7 @@ if [ "$DRY_RUN" != "true" ]; then
     dry "systemctl reload nginx"
     echo "  ✅ Nginx 配置验证通过，已 reload"
   else
-    err "Nginx 配置语法错误，请检查 $NGINX_AVAIL_DIR/"
+    err "Nginx 配置语法错误，请检查 /etc/nginx/sites-available/"
     echo "  运行: nginx -t 查看具体错误"
   fi
 fi
@@ -471,7 +315,6 @@ HEALTH_ENDPOINTS=(
   "8001:饮食反馈"
   "9000:管理控制台"
   "9876:Webhook"
-  "8090:数据看板"
 )
 
 if [ "$DRY_RUN" = "true" ]; then
@@ -488,7 +331,7 @@ else
     name="${ep##*:}"
     echo -n "  等待 $name (:${port})..."
     for ((i=0; i<TIMEOUT; i+=2)); do
-      if curl -sf "http://localhost:${port}/healthz" > /dev/null 2>&1 || \
+      if curl -sf "http://localhost:${port}/" > /dev/null 2>&1 || \
          curl -sf "http://localhost:${port}/health" > /dev/null 2>&1 || \
          curl -sf "http://localhost:${port}/ping" > /dev/null 2>&1; then
         echo -e " ${GREEN}✅${NC}"
@@ -496,7 +339,7 @@ else
       fi
       sleep 2
     done
-    if ! curl -sf "http://localhost:${port}/healthz" > /dev/null 2>&1 && \
+    if ! curl -sf "http://localhost:${port}/" > /dev/null 2>&1 && \
        ! curl -sf "http://localhost:${port}/health" > /dev/null 2>&1 && \
        ! curl -sf "http://localhost:${port}/ping" > /dev/null 2>&1; then
       echo -e " ${RED}❌ (超时)${NC}"
@@ -508,18 +351,12 @@ fi
 # ── 11. 验证 ────────────────────────────────────────────────────────────
 log "运行自检..."
 if [ "$DRY_RUN" != "true" ]; then
-  # 优先用统一自检引擎（结构化 + 逐一修复建议）；回退到 verify.sh
-  SELFCHECK="$INSTALL_ROOT/tools/selfcheck.py"
-  if [ -f "$SELFCHECK" ] && [ -x "$VENV_DIR/bin/python3" ]; then
-    "$VENV_DIR/bin/python3" "$SELFCHECK" --config "$APP_YAML" \
-      --no-external --report "$LOG_DIR/selfcheck.json" \
-      || warn "自检发现失败项（详情看表，或 $LOG_DIR/selfcheck.json）"
-  else
-    warn "未找到 tools/selfcheck.py，回退到 verify.sh"
-    VERIFY_SCRIPT="$PACKAGE_DIR/verify.sh"
-    if [ -f "$VERIFY_SCRIPT" ]; then
-      bash "$VERIFY_SCRIPT" || warn "自检发现警告，请查看详情"
-    fi
+  VERIFY_SCRIPT="$PACKAGE_DIR/verify.sh"
+  if [ ! -f "$VERIFY_SCRIPT" ] && [ -f "$PACKAGE_DIR/scripts/verify.sh" ]; then
+    VERIFY_SCRIPT="$PACKAGE_DIR/scripts/verify.sh"
+  fi
+  if [ -f "$VERIFY_SCRIPT" ]; then
+    bash "$VERIFY_SCRIPT" || warn "自检发现警告，请查看详情"
   fi
 else
   echo -e "${YELLOW}[DRY-RUN]${NC} 跳过自检（dry-run 模式）"

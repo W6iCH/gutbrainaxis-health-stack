@@ -1,28 +1,93 @@
 ========================================================================
   脱敏扫描报告  (publish-safety scan)
 ========================================================================
-扫描目录 : <repo-root>
+扫描目录 : /Users/which/Documents/个性化饮食干预课题_整合包/12_部署包_可发布
 结论     : ✅ PASS — 未发现阻断项
 阻断项   : 0
-警告项   : 76
+警告项   : 148
+
+⚠️  [A] Git 内部目录  ×1
+      .git  → .git
 
 ⚠️  [A] 文件过大，已跳过内容扫描  ×1
+      services/diet_survey/dish_nutrition_calculated.csv  → >4194304 bytes
 
-⚠️  [A] 疑似真实数据库路径引用  ×36
+⚠️  [A] 疑似真实数据库路径引用  ×103
+      测试报告_模拟数据.md:70  → | `sjtu_survey_pro/survey_data.db` | `submissions` 3、`email_log` 3 | student_id 3、submission_id 3、email_log.student_id 3 |
+      测试报告_模拟数据.md:71  → | `diet_survey/diet_data.db` | `submissions` 3 | student_id 3、submission_id 3 |
+      测试报告_模拟数据.md:72  → | `exercise_survey/exercise_data.db` | `submissions` 3 | student_id 3、submission_id 3 |
+      测试报告_模拟数据.md:81  → | `survey_data.db` | `submissions.student_id` 3、`email_log.student_id` 3（`recipient` 同批） |
+      测试报告_模拟数据.md:82  → | `diet_data.db` | `submissions.student_id` 3 |
+      测试报告_模拟数据.md:83  → | `exercise_data.db` | `submissions.student_id` 3 |
+      测试报告_模拟数据.md:91  → ✅ sjtu_survey_pro/survey_data.db:submissions.student_id     残留=0
+      测试报告_模拟数据.md:92  → ✅ sjtu_survey_pro/survey_data.db:submissions.submission_id  残留=0
+      测试报告_模拟数据.md:93  → ✅ sjtu_survey_pro/survey_data.db:submissions.email          残留=0
+      测试报告_模拟数据.md:94  → ✅ sjtu_survey_pro/survey_data.db:email_log.student_id       残留=0
+      测试报告_模拟数据.md:95  → ✅ sjtu_survey_pro/survey_data.db:email_log.recipient        残留=0
+      测试报告_模拟数据.md:96  → ✅ diet_survey/diet_data.db:submissions.student_id           残留=0
+      测试报告_模拟数据.md:97  → ✅ diet_survey/diet_data.db:submissions.submission_id        残留=0
+      测试报告_模拟数据.md:98  → ✅ diet_survey/diet_data.db:submissions.email                残留=0
+      测试报告_模拟数据.md:99  → ✅ exercise_survey/exercise_data.db:submissions.student_id   残留=0
+      测试报告_模拟数据.md:100  → ✅ exercise_survey/exercise_data.db:submissions.submission_id 残留=0
+      测试报告_模拟数据.md:101  → ✅ exercise_survey/exercise_data.db:submissions.email        残留=0
+      功能与进程清单.md:17  → | A1 | 问卷数据拉取 | 从 wj.sjtu.edu.cn 增量拉取量表答卷 | `services/sjtu_survey_pro/survey_sync_cron.py` | 问卷公共 API、`survey_data.db` | `survey_platforms.scale.token`、`.page_size`、`.fetch_interval_minutes` |
+      功能与进程清单.md:29  → | B1 | 饮食问卷拉取 | 定时增量拉取饮食问卷 | `services/diet_survey/diet_sync_cron.py` | 问卷 API、`diet_data.db` | `survey_platforms.diet.*` |
+      功能与进程清单.md:40  → | C1 | 运动问卷拉取 | 定时增量拉取运动问卷（仅步行类条目） | `services/exercise_survey/exercise_sync_cron.py` | 问卷 API、`exercise_data.db` | `survey_platforms.exercise.*` |
+      功能与进程清单.md:112  → | `research-survey-feedback.service` | service | 8000（+8080 兼容） | network-online | `sjtu_survey_pro/survey_data.db`、`feedback_trigger.log` | 已有 |
+      功能与进程清单.md:113  → | `research-diet-feedback.service` | service | 8001 | network-online | `diet_survey/diet_data.db`、`logs/feedback_trigger.log` | 已有 |
+      功能与进程清单.md:156  → | `$APP_BASE/sjtu_survey_pro/survey_data.db` | 问卷答卷、量表分、邮件日志 | 随备份保留 14 份 |
+      功能与进程清单.md:158  → | `$APP_BASE/diet_survey/diet_data.db` | 饮食记录与建议 | 随备份保留 14 份 |
+      功能与进程清单.md:160  → | `$APP_BASE/exercise_survey/exercise_data.db` | 运动记录 | 随备份保留 14 份 |
+      … 另有 78 处
 
-⚠️  [D] 硬编码 /opt 路径  ×39
+⚠️  [C] 疑似学号（独立 8-12 位数字）  ×1
+      tools/seed_mock_data.py:236  → ap.add_argument("--seed", type=int, default=20260916)
+
+⚠️  [D] 硬编码 /opt 路径  ×42
+      install.sh:89  → echo "用法: sudo bash install.sh [--dry-run] [--prefix=/opt/gutbrainaxis]"
+      systemd/research-survey-feedback.service:4  → #    __APP_BASE__   → 安装前缀（默认 /opt/gutbrainaxis）
+      _归档_20260916_设计优化/install.sh:87  → echo "用法: sudo bash install.sh [--dry-run] [--prefix=/opt/gutbrainaxis]"
+      _归档_20260916_设计优化/scripts/health_monitor.py:22  → OPT = os.environ.get("APP_BASE", "/opt/gutbrainaxis")
+      docs/升级备份与回滚.md:108  → cd /opt/gutbrainaxis-health-stack
+      docs/升级备份与回滚.md:165  → cd /opt/gutbrainaxis-health-stack
+      docs/升级备份与回滚.md:223  → cd /opt/gutbrainaxis-health-stack
+      docs/安装说明.md:81  → cd /opt/gutbrainaxis-health-stack
+      docs/安装说明.md:103  → cd /opt/gutbrainaxis-health-stack
+      docs/安装说明.md:117  → [DRY-RUN] python3 -m venv /opt/gutbrainaxis/venv
+      docs/安装说明.md:147  → 安装目录: /opt/gutbrainaxis
+      docs/安装说明.md:148  → 日志:     /opt/gutbrainaxis/logs/install.log
+      scripts/health_monitor.py:22  → OPT = os.environ.get("APP_BASE", "/opt/gutbrainaxis")
+      services/TECHNICAL_root.md:15  → │  /opt/run_all.sh              ← 统一启动/停止/状态脚本       │
+      services/TECHNICAL_root.md:16  → │  /opt/admin_console.py        ← 远程管理控制台 (端口 9000)   │
+      services/TECHNICAL_root.md:17  → │  /opt/TECHNICAL.md            ← 本文档                      │
+      services/TECHNICAL_root.md:18  → │  /opt/logs/                   ← 控制台日志                   │
+      services/TECHNICAL_root.md:20  → │  /opt/sjtu_survey_pro/        ← 问卷评估系统                 │
+      services/TECHNICAL_root.md:28  → │  /opt/diet_survey/            ← 饮食记录系统                 │
+      services/TECHNICAL_root.md:130  → bash /opt/run_all.sh start     # 启动所有服务
+      services/TECHNICAL_root.md:131  → bash /opt/run_all.sh stop      # 停止所有服务
+      services/TECHNICAL_root.md:132  → bash /opt/run_all.sh restart   # 重启所有服务
+      services/TECHNICAL_root.md:133  → bash /opt/run_all.sh status    # 查看状态
+      services/TECHNICAL_root.md:140  → bash /opt/sjtu_survey_pro/run_all.sh {all|server|status|fetch}
+      services/TECHNICAL_root.md:143  → bash /opt/diet_survey/run_all.sh {all|webhook|server|llm|sync|status|stop}
+      … 另有 17 处
 
 ------------------------------------------------------------------------
 按目录汇总（前 20）
+     27  .
      20  services
+     19  _测试证据_20260916
+     17  docs
      14  services/sjtu_survey_pro
-     11  docs
+     11  tools
       9  services/diet_survey
       5  01_评分修复
+      5  config
       4  scripts
-      3  .
+      3  _归档_20260916_设计优化
+      3  _归档_20260916_设计优化/scripts
       3  services/admin_console
       3  services/admin_console/config
-      2  config
+      2  _归档_20260916_设计优化/config
       1  systemd
+      1  services/microbiome
       1  services/exercise_survey

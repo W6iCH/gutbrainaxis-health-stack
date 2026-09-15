@@ -1,0 +1,15 @@
+{
+  "source": "大学生人群基线数据 (n=56)",
+  "scales": {
+    "GAD-7":    {"mean": 4.91,  "sd": 5.07,  "min": 0,  "max": 21},
+    "PHQ-9":    {"mean": 4.91,  "sd": 3.54,  "min": 0,  "max": 27},
+    "PSQI":     {"mean": 9.38,  "sd": 4.30,  "min": 0,  "max": 21},
+    "PSS-14":   {"mean": 41.30, "sd": 8.27,  "min": 22, "max": 56},
+    "GSRS":     {"mean": 21.45, "sd": 4.26,  "min": 15, "max": 105},
+    "VSI":      {"mean": 33.21, "sd": 9.02,  "min": 14, "max": 75},
+    "WHOQOL-BREF": {"mean": 98.38, "sd": 13.21, "min": 59, "max": 120},
+    "DEBQ-emotional":  {"mean": 1.88, "sd": 0.53, "min": 0, "max": 4},
+    "DEBQ-external":   {"mean": 2.69, "sd": 0.52, "min": 0, "max": 4},
+    "DEBQ-restrained": {"mean": 2.27, "sd": 0.95, "min": 0, "max": 4}
+  }
+}

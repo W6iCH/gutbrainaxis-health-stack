@@ -27,15 +27,9 @@ from exercise_database import (
 )
 
 # ── API 配置 ─────────────────────────────────────────────────────────────
-# ⚠️ 安全修正：旧版本在此**硬编码了真实的问卷公共查询 token**
-#    （`.../result/<REDACTED_已轮换>/json`），随公开仓库发布
-#    即构成凭据泄露。现改为从环境变量读取，仓库内只保留占位符。
-#    配置位置：config/app.yaml → survey_platforms.exercise.token
-#             （或 /etc/research-app/secrets.env 的 WJX_EXERCISE_TOKEN）
-WJX_EXERCISE_TOKEN = os.environ.get("WJX_EXERCISE_TOKEN", "").strip()
-API_BASE_URL = ("https://wj.sjtu.edu.cn/api/v1/public/result/"
-                f"{WJX_EXERCISE_TOKEN}/json")
-API_PAGE_SIZE = int(os.environ.get("WJX_EXERCISE_PAGE_SIZE", "50"))  # 大页提升效率
+
+API_BASE_URL = "https://wj.sjtu.edu.cn/api/v1/public/result/<REDACTED_已轮换>/json"
+API_PAGE_SIZE = 50  # Fetch larger pages for efficiency
 CST = timezone(timedelta(hours=8))
 
 # ── 日志 ──────────────────────────────────────────────────────────────────

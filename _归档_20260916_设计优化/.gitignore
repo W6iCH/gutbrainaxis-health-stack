@@ -19,22 +19,10 @@ backups/
 survey_data.db*
 diet_data.db*
 exercise_data.db*
-microbiome_data.db*
 survey_data.db.v1.bak
 sjtu_survey_data*.json
 population_stats.json
-!population_stats.default.json
 roster.json
-
-# 自检 / 导出 / 测试产物
-logs/selfcheck.json
-_测试证据_*/
-exports/
-export/
-
-# 菌群导入归档（含科研原始数据）
-microbiome/import/processed/
-microbiome/import/failed/
 
 # ─────────────────────────────────────────────────────────────
 #  日志 —— 永不入库
@@ -52,12 +40,6 @@ feedback_trigger.log
 .env
 .env.*
 !.env.example
-# 统一配置：模板入库，真实配置不入库
-app.yaml
-!app.yaml.example
-secrets.env
-!secrets.env.example
-initial_password.txt
 rclone.conf
 credentials.json
 *.pem
@@ -73,7 +55,6 @@ config/passwd
 config/secret_key
 config/.must_change_password
 config/*.local
-config/app.yaml
 secrets/
 
 # 显式保留所有配置模板（可在任意层级）

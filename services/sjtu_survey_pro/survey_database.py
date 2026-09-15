@@ -491,16 +491,21 @@ def update_submission_analysis(db_id: int, analysis: dict):
 # ── Email Log Operations ─────────────────────────────────────────────────
 
 def log_email(submission_id: str, student_id: str, recipient: str) -> int:
-    """Create an email log entry."""
+    """Create an email log entry.
+
+    ⚠️ 返回的是 **cursor.lastrowid**（`sqlite3.Connection` 并无 `lastrowid` 属性）：
+    旧实现 `return conn.lastrowid` 会抛 AttributeError，导致邮件队列写入失败后
+    被上层静默吞掉 —— 邮件永远不会发出。本版修正为使用 cursor。
+    """
     conn = get_conn()
     try:
-        conn.execute("""
+        cur = conn.execute("""
             INSERT INTO email_log
                 (submission_id, student_id, recipient, status)
             VALUES (?, ?, ?, 'pending')
         """, (submission_id, student_id, recipient))
         conn.commit()
-        return conn.lastrowid
+        return cur.lastrowid
     finally:
         conn.close()
 

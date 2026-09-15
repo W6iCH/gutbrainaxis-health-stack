@@ -243,13 +243,29 @@ def scan_content(root, findings):
 
 
 def scan_dirs(root, findings):
+    """目录级阻断项。
+
+    ⚠️ 范围修正（设计复查）：
+      旧实现不剪枝 SKIP_DIRS，导致在**普通 git checkout 内**扫描时把仓库自身的
+      `.git/` 判为阻断项 → 该门禁在任何 checkout 都必然失败（无法使用）。
+      现改为：
+        · 与 SKIP_DIRS 重叠的目录（`.git` / `__pycache__` / `venv` 等）→ **WARN**，
+          并剪枝不再深入（它们已被 .gitignore 排除，不属于发布集）；
+        · 真正的数据/队列/日志目录（`logs` / `.llm_queue` / `.email_queue`）
+          → 仍为 **BLOCKER**。
+      这样既保留门禁信号，又让门禁可用。
+    """
     for dirpath, dirnames, _ in os.walk(root):
-        if ".git" in dirpath.split(os.sep):
-            continue
-        for d in list(dirnames):
+        keep = []
+        for d in dirnames:
             if d in FS_DIR_BLOCKERS:
                 rel = os.path.relpath(os.path.join(dirpath, d), root)
-                findings.append(Finding("A", "BLOCKER", FS_DIR_BLOCKERS[d], rel, 0, d))
+                level = "WARN" if d in SKIP_DIRS else "BLOCKER"
+                findings.append(Finding("A", level, FS_DIR_BLOCKERS[d], rel, 0, d))
+            if d in SKIP_DIRS:
+                continue          # 剪枝：非发布集，不深入
+            keep.append(d)
+        dirnames[:] = keep
     return findings
 
 

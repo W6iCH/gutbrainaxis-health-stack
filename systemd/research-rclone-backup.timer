@@ -3,7 +3,7 @@
 # ────────────────────────────────────────────────────────────────────────────
 [Unit]
 Description=Research Rclone Backup Timer (daily at 3am)
-Documentation=file://__APP_BASE__/docs/08_备份与恢复.md
+Documentation=file://__APP_BASE__/docs/升级备份与回滚.md
 
 [Timer]
 OnCalendar=daily

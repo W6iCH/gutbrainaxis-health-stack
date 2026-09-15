@@ -79,13 +79,15 @@ class DietWebhookHandler(BaseHTTPRequestHandler):
             }).encode("utf-8"))
 
     def do_GET(self):
-        if self.path == "/health":
+        if self.path in ("/health", "/healthz", "/ping"):
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps({
                 "status": "ok",
-                "service": "diet-webhook-v2"
+                "service": "diet-webhook-v2",
+                "pid": os.getpid(),
+                "time": datetime.now().isoformat(timespec="seconds"),
             }).encode("utf-8"))
         else:
             self.send_response(404)

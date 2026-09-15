@@ -445,6 +445,30 @@ def api_export_combined():
 # Health check
 # =========================================================================
 
+@app.route('/healthz')
+def healthz():
+    """统一健康探针：/healthz（含三个库的可读性检查）。"""
+    checks, ok = {}, True
+    for name, fn in (('survey', get_survey_conn), ('diet', get_diet_conn),
+                     ('exercise', get_exercise_conn)):
+        try:
+            c = fn()
+            c.execute('SELECT 1')
+            c.close()
+            checks[name + '_db'] = {'readable': True}
+        except Exception as e:                    # noqa: BLE001
+            checks[name + '_db'] = {'readable': False, 'error': str(e)}
+            ok = False
+    return jsonify({
+        'status': 'ok' if ok else 'degraded',
+        'service': 'data-dashboard',
+        'version': '2.0',
+        'pid': os.getpid(),
+        'checks': checks,
+        'time': datetime.now().isoformat(timespec='seconds'),
+    }), (200 if ok else 503)
+
+
 @app.route('/health')
 def health():
     return jsonify({'status': 'ok', 'version': '2.0'})

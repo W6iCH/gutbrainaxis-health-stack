@@ -1,0 +1,24 @@
+# ────────────────────────────────────────────────────────────────────────────
+#  12) 每日报告 + 告警汇总（定时运行，由 .timer 触发）
+#  ⚠️ 本单元为**新增**：此前 daily_report.py 存在（且有两份重复实现：
+#     services/feedback/daily_report.py 与 services/diet_survey/daily_report.py），
+#     但**没有任何 systemd 单元/timer** —— 每日报告实际上从未发送过。
+#  规范实现：services/feedback/daily_report.py（含 CC 抄送能力）。
+#  services/diet_survey/daily_report.py 保留但标记为 deprecated，不再排程。
+#  触发时间来自 config/app.yaml → schedule.daily_report_at
+# ────────────────────────────────────────────────────────────────────────────
+[Unit]
+Description=Research Daily Report (triggered by timer)
+Documentation=file://__APP_BASE__/docs/数据模型与存储.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=__SERVICE_USER__
+WorkingDirectory=__APP_BASE__/feedback
+EnvironmentFile=-__ENV_FILE__
+ExecStart=__VENV__ __APP_BASE__/feedback/daily_report.py
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=research-daily-report

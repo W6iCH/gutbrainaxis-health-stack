@@ -3,7 +3,7 @@
 # ────────────────────────────────────────────────────────────────────────────
 [Unit]
 Description=Research Survey Sync Timer (every hour)
-Documentation=file://__APP_BASE__/docs/02_问卷反馈系统.md
+Documentation=file://__APP_BASE__/docs/数据模型与存储.md
 
 [Timer]
 OnCalendar=hourly

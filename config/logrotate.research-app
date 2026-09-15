@@ -1,0 +1,51 @@
+# ============================================================================
+#  日志轮转 — 个性化饮食干预课题 服务器端研究系统
+# ============================================================================
+#  安装位置：/etc/logrotate.d/research-app
+#  由 install.sh 从本模板安装。
+#
+#  覆盖三类日志：
+#    ① __APP_BASE__/logs/*.log            （安装日志、控制台、健康巡检、备份）
+#    ② __APP_BASE__/*/logs/*.log          （各服务子目录日志：LLM 队列、webhook 等）
+#    ③ __APP_BASE__/*/.email_queue/*.log  （同步 cron 日志）
+#
+#  策略：按天轮转，保留 14 份，压缩，延迟压缩（避免刚轮转就压缩影响实时排查）。
+#  用 copytruncate：服务以 append 方式持有文件句柄，不重启即可轮转。
+# ============================================================================
+
+__APP_BASE__/logs/*.log __APP_BASE__/*/logs/*.log __APP_BASE__/*/.email_queue/*.log {
+    daily
+    rotate 14
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+    create 0640 __SERVICE_USER__ __SERVICE_USER__
+    dateext
+    dateformat -%Y%m%d
+    su __SERVICE_USER__ __SERVICE_USER__
+}
+
+# nginx 日志（若由本系统统一管理）
+/var/log/nginx/research-*.log {
+    daily
+    rotate 14
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+    create 0640 www-data adm
+}
+
+# rclone 备份日志（体积小，保留更久）
+/var/log/rclone-backup.log {
+    weekly
+    rotate 12
+    missingok
+    notifempty
+    compress
+    copytruncate
+    create 0640 root root
+}

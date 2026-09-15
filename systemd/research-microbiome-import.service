@@ -1,0 +1,21 @@
+# ────────────────────────────────────────────────────────────────────────────
+#  13) 二期菌群数据导入（定时运行，由 .timer 触发）
+#  扫描 MICROBIOME_IMPORT_DIR 下投递的 CSV（宏基因组 / SCFA / 炎症因子），
+#  校验后幂等入库到 microbiome_data.db，并把文件归档到 processed/ 或 failed/。
+#  ⚠️ 仅当 config/app.yaml → microbiome.enabled=true 时才应启用本单元。
+# ────────────────────────────────────────────────────────────────────────────
+[Unit]
+Description=Research Microbiome Import (triggered by timer)
+Documentation=file://__APP_BASE__/docs/数据模型与存储.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=__SERVICE_USER__
+WorkingDirectory=__APP_BASE__/microbiome
+EnvironmentFile=-__ENV_FILE__
+ExecStart=__VENV__ __APP_BASE__/microbiome/import_microbiome.py
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=research-microbiome-import

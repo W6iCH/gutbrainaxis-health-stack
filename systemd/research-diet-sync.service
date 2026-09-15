@@ -1,0 +1,21 @@
+# ────────────────────────────────────────────────────────────────────────────
+#  11) 饮食问卷同步（定时运行，由 .timer 触发）
+#  ⚠️ 本单元为**新增**：此前 diet_sync_cron.py 存在但**没有任何 systemd 单元**，
+#     导致饮食问卷实际上从未定时拉取（只能靠 webhook 被动触发）。
+#  本 service 由 research-diet-sync.timer 调用，不单独 enable。
+# ────────────────────────────────────────────────────────────────────────────
+[Unit]
+Description=Research Diet Survey Sync (triggered by timer)
+Documentation=file://__APP_BASE__/docs/数据模型与存储.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=__SERVICE_USER__
+WorkingDirectory=__APP_BASE__/diet_survey
+EnvironmentFile=-__ENV_FILE__
+ExecStart=__VENV__ __APP_BASE__/diet_survey/diet_sync_cron.py
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=research-diet-sync

@@ -17,7 +17,10 @@ DONE_DIR = os.path.join(QUEUE_DIR, "done")
 FAILED_DIR = os.path.join(QUEUE_DIR, "failed")
 QUEUE_LOG = os.path.join(BASE_DIR, "logs", "llm_queue.log")
 
-for d in [QUEUE_DIR, PENDING_DIR, DONE_DIR, FAILED_DIR]:
+# 队列目录与日志目录都必须存在：
+# 旧实现只建了队列目录，`logs/` 缺失时 logging.FileHandler 会抛
+# FileNotFoundError → 整个 worker 起不来（systemd Restart 循环）。
+for d in [QUEUE_DIR, PENDING_DIR, DONE_DIR, FAILED_DIR, os.path.dirname(QUEUE_LOG)]:
     os.makedirs(d, exist_ok=True)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s",

@@ -10,7 +10,7 @@ Survey Feedback Server — Strict Mode + Auto Trigger
 避免用户等待 60 分钟的 cron 周期。
 """
 
-import json, os, sys, urllib.parse, threading
+import json, os, signal, sys, urllib.parse, threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import datetime
 
@@ -108,8 +108,44 @@ class FeedbackHandler(BaseHTTPRequestHandler):
                 self._serve_individual_report(user_param, quest_param, answer_param)
                 return
 
+        # 统一健康探针（供 tools/selfcheck.py 与容器/反代探活使用）
+        if path in ("/healthz", "/health", "/ping"):
+            self._send_healthz(path)
+            return
+
         # Everything else → 403 Forbidden
         self._send_403()
+
+    def _send_healthz(self, path):
+        """GET /healthz → 统一 JSON 结构（含 DB 可读性检查）。"""
+        checks = {}
+        ok = True
+        try:
+            conn = get_conn()
+            n = conn.execute("SELECT COUNT(*) FROM submissions").fetchone()[0]
+            conn.close()
+            checks["survey_db"] = {"readable": True, "submissions": n}
+        except Exception as e:                      # noqa: BLE001
+            checks["survey_db"] = {"readable": False, "error": str(e)}
+            ok = False
+        payload = {
+            "status": "ok" if ok else "degraded",
+            "service": "survey-feedback",
+            "pid": os.getpid(),
+            "checks": checks,
+            "time": datetime.now().isoformat(timespec="seconds"),
+        }
+        if path == "/ping":
+            body = b"pong"
+            ctype = "text/plain; charset=utf-8"
+        else:
+            body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+            ctype = "application/json; charset=utf-8"
+        self.send_response(200 if ok else 503)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def _serve_individual_report(self, user_param, quest_param, answer_param):
         """Serve the analysis report for ONE specific answer ID."""
@@ -230,14 +266,32 @@ def main():
     print()
     print("  Press Ctrl+C to stop.\n")
 
+    # 优雅停机：SIGTERM/SIGINT → 停止接受新请求 → 关服务器 → 退出
+    stop = threading.Event()
+
+    def _on_signal(signum, frame):           # noqa: ARG001
+        print(f"\n  [shutdown] 收到信号 {signum}，优雅停机中…")
+        stop.set()
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            signal.signal(sig, _on_signal)
+        except (ValueError, OSError):
+            pass
+
     try:
-        import time
-        while True:
-            time.sleep(3600)
+        while not stop.is_set():
+            stop.wait(1.0)
     except KeyboardInterrupt:
-        for _, srv in servers:
-            srv.shutdown()
-            srv.server_close()
+        pass
+    finally:
+        for port, srv in servers:
+            try:
+                srv.shutdown()
+                srv.server_close()
+                print(f"  [shutdown] :{port} 已关闭")
+            except Exception:                # noqa: BLE001
+                pass
 
 
 if __name__ == "__main__":
