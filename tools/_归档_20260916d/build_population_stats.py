@@ -59,7 +59,7 @@ DEFAULT_ENTRYLIB = os.path.join(PARENT, "14_评分标准", "03_条目库_修正"
 DEFAULT_OUT = os.path.join(SVC_DIR, "population_stats.default.json")
 
 MIN_N = 5                # 单个聚合单元最小样本量（更低则跳过）
-SCORING_NATIVE = "3.0-native-options"
+SCORING_NATIVE = "3.0-native-ordinal"
 SCORING_OFFICIAL = "2.0-official-rules"
 
 # 输出量表键 → 展示量程（用于正态曲线裁剪）

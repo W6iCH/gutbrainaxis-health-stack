@@ -23,9 +23,8 @@ app:
   log_dir: /opt/gutbrainaxis/logs      # 日志目录（配合 logrotate）
   log_level: INFO                      # DEBUG|INFO|WARNING|ERROR
   timezone: Asia/Shanghai
-  # 计分口径：3.0-native-options（权威，推荐）｜3.0-native-ordinal（同义旧键名）
-  #           ｜2.0-official-rules（历史兼容，已废止）
-  scoring_version: 3.0-native-options
+  # 计分口径：3.0-native-ordinal（权威，推荐）｜2.0-official-rules（历史兼容）
+  scoring_version: 3.0-native-ordinal
 
 # ── 2. 站点与反向代理 ──────────────────────────────────────────────────────
 site:

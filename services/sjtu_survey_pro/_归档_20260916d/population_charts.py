@@ -30,7 +30,7 @@ STATS_FILE = os.path.join(BASE_DIR, "population_stats.json")
 DEFAULT_STATS_FILE = os.path.join(BASE_DIR, "population_stats.default.json")
 
 # 程序计分口径（与 survey_analysis.SCORING_VERSION 保持一致的语义）
-DEFAULT_SCORING_VERSION = os.environ.get("SCORING_VERSION", "3.0-native-options")
+DEFAULT_SCORING_VERSION = os.environ.get("SCORING_VERSION", "3.0-native-ordinal")
 
 # ── Load population data ───────────────────────────────────────────────
 

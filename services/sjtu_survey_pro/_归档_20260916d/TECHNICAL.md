@@ -1,10 +1,5 @@
 # 问卷反馈系统 — 服务器部署技术说明
 
-> **计分口径：`3.0-native-options`（原生编码 / Edition B，2026-09-16 起）**。
-> 计分核心 `survey_scoring.py` 已由「推测选项文本」版替换为**原生编码**版：
-> 矩阵题按 `optionN` 序号、单选题按**实测真实 label** 计分；**未识别即报错**（禁止静默丢弃）。
-> 详见 §二·A。
-
 > 文档版本: 2.6  
 > 部署服务器: `127.0.0.1` (ecs-aab7, Ubuntu 22.04 aarch64)  
 > 部署目录: `/opt/sjtu_survey_pro`  
@@ -99,58 +94,6 @@
 | `sjtu_survey_data_page1.json` | 问卷原始数据缓存 (静态备份) |
 | `.email_queue/` | 邮件队列目录 (pending/sent/failed) |
 | `feedback_trigger.log` | 用户访问/同步触发记录日志 |
-
----
-
-## 二·A、计分口径（**3.0-native-options**，2026-09-16 起）
-
-> 计分核心：`services/sjtu_survey_pro/survey_scoring.py`
-> （= 权威条目库 `14_评分标准/03_条目库_修正/survey_scoring_native.py` 逐字 + 部署包兼容层）
-> `SCORING_VERSION = "survey_scoring:3.0-native-options"`；配置项 `app.scoring_version`。
-> 上一版 `2.0-official-rules`（推测选项文本 + 三级模糊匹配）**已废止**。
-
-### 与已废止版本的差异
-
-| # | 项目 | 2.0-official-rules（废止） | **3.0-native-options（现行）** |
-|---|---|---|---|
-| D1 | 选项→分值 | 按**推测的**选项文本做三级模糊匹配 | 矩阵题按平台 **`optionN` 序号**；单选题按**实测真实 label** 显式映射 |
-| D2 | PSS-14 频率选项 | 从不/几乎没有/有时/经常/**总是** | 从不/几乎从不/有时/经常/**非常频繁** |
-| D3 | PSS-14 反向条目 | 4 条 | **6 条**（官方） |
-| D4 | PSQI 睡眠频率 | 3 级压缩（注释亦写 3 级） | **4 级** 0–3 |
-| D5 | PSQI 主观质量末档 | 「很差」 | **「非常差」** |
-| D6 | PSQI 入睡耗时末档 | 「> 60 分钟」 | **「超过 60 分钟」** |
-| D7 | WHOQOL 满意度 | 「不满意」「既非满意也非不满意」**无键** | 全量收录（很不满意 1 / 不满意 2 / 既非…3 / 满意 4 / 很满意 5） |
-| D8 | WHOQOL 其余单选 | 大量真实标签未收录 | 实测全集收录（48 道单选题全覆盖） |
-| D9 | WHOQOL Q3/Q4/Q26 | 再叠加 `min+max−raw` → **双重反向** | **不再叠加**（label 映射即已完成方向编码） |
-| D10 | 未识别作答 | 记缺失 / **静默丢弃** | **抛 `UnmappedAnswer`**（禁止静默丢弃） |
-
-### 实测影响（226 份全量）
-
-| 量表 | 2.0 版未计分条目 | 占比 |
-|---|---|---|
-| PSS-14 | 229 / 3164 | 7.2% |
-| PSQI | 717 / 4520 | 15.9% |
-| WHOQOL-BREF | 1145 / 6328 | 18.1% |
-| GAD-7 / PHQ-9 / GSRS / VSI / DEBQ | 0 | 0% |
-
-现行版本对 **226 份原始问卷重算：未映射作答 0 条**（严格模式全量通过）。
-
-### 未识别即报错（运维须知）
-
-- 默认**严格模式**（`SCORING_STRICT=1`）：任何**已归属量表**的作答无法映射 →
-  抛 `UnmappedAnswer`，报告生成失败并报出具体题干与作答值。**绝不静默归 0 / 归缺失**。
-- 应急降级：设 `SCORING_STRICT=0` 或调用处 `strict=False` → 不中断，但审计行进入
-  `result["_audit"]` 与 `score_all(...)["_meta"]["unmapped_answers"]`，可追溯。
-- 不属于任何量表的题干（人口学、食物频率、数值题）由 `NON_SCORING` 显式登记；
-  仍未登记者一律记入 `_meta.unknown_items`（**不静默丢弃**）。
-- 矩阵题必须携带 `matrix`（题组标题）与 `option_idx`（`optionN` 序号）——
-  `survey_analysis.py` 已在展开矩阵作答时补出这两个字段。
-
-### 相关文件
-
-- `services/sjtu_survey_pro/survey_scoring_native.py` —— 权威条目库**原件副本**（溯源用）
-- `services/sjtu_survey_pro/survey_analysis.py` —— 分析引擎；`SCORING_VERSION` 直接取自计分核心
-- `14_评分标准/00_评分标准_权威版.md`、`01_口径定义与裁定.md`、`03_条目库_修正/与已发布版本差异.md`
 
 ---
 
@@ -279,9 +222,9 @@ API_URL = (
 #### DEBQ (荷兰饮食行为问卷) — 33项, 3子量表
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| `debq_emotional_score` | REAL | 情绪性饮食**均分 (1–5)**〔旧名保留；0–4 求和口径已废止〕 |
-| `debq_external_score` | REAL | 外部性饮食**均分 (1–5)**〔含 1 条反向条目〕 |
-| `debq_restrained_score` | REAL | 限制性饮食**均分 (1–5)** |
+| `debq_emotional_score` | REAL | 情绪性饮食总分 (0-52) |
+| `debq_external_score` | REAL | 外部性饮食总分 (0-40) |
+| `debq_restrained_score` | REAL | 限制性饮食总分 (0-40) |
 | `debq_emotional_mean` | REAL | 情绪性饮食均分 |
 | `debq_external_mean` | REAL | 外部性饮食均分 |
 | `debq_restrained_mean` | REAL | 限制性饮食均分 |
@@ -305,7 +248,7 @@ API_URL = (
 | `phq9_n_items` | INTEGER | 实际答题数 |
 | `phq9_interpretation` | TEXT | 无/轻/中/中重/重度 |
 
-#### PSQI (匹兹堡睡眠质量指数) — 7 成分（18 题）
+#### PSQI (匹兹堡睡眠质量指数) — 19项
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | `psqi_score` | REAL | 总分 (0-21, >7提示障碍) |
@@ -322,7 +265,7 @@ API_URL = (
 #### GSRS (胃肠道症状评定量表) — 15项
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| `gsrs_score` | REAL | 总分 (15–75，15 题 × 1–5) |
+| `gsrs_score` | REAL | 总分 (15-105) |
 | `gsrs_n_items` | INTEGER | 实际答题数 |
 | `gsrs_interpretation` | TEXT | 无/轻/中/重度 |
 
@@ -336,7 +279,7 @@ API_URL = (
 #### VSI (内脏敏感指数) — 15项
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| `vsi_score` | REAL | 总分 (15–90，15 题 × 1–6) |
+| `vsi_score` | REAL | 总分 (15-105) |
 | `vsi_n_items` | INTEGER | 实际答题数 |
 | `vsi_interpretation` | TEXT | 低/轻/中/重度焦虑 |
 

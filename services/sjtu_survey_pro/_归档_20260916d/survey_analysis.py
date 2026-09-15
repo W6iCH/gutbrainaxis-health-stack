@@ -6,7 +6,6 @@ Handles both simple question and matrix question formats.
 """
 
 import json
-import re
 import math
 from datetime import datetime
 from population_charts import make_bell_svg, make_debq_2d_svg, compute_percentile
@@ -18,7 +17,7 @@ from population_charts import make_bell_svg, make_debq_2d_svg, compute_percentil
 import survey_scoring as SC
 
 # 计分规则版本号（写入报告，便于追溯新旧分差异）
-SCORING_VERSION = getattr(SC, "SCORING_VERSION", SC.__name__ + ":3.0-native-options")
+SCORING_VERSION = SC.__name__ + ":2.0-official-rules"
 
 # ── Scale scoring definitions ──────────────────────────────────────────────
 
@@ -66,19 +65,13 @@ DEBQ_RESTRAINED = [
     "你在选择食物时是否会考虑体重因素",
 ]
 
-# [3.0-native-options] 旧「推测选项文本」字典已废止。
-# 矩阵题不再按文本匹配，改由 survey_scoring 按 `optionN` 序号计分；
-# 此处常量仅作历史引用占位，值为真实 label → 官方 1–5 分值。
-DEBQ_OPTIONS = dict(getattr(SC, "OPT_1_5_DEBQ", {}) or {})
+DEBQ_OPTIONS = {"从不": 0, "很少": 1, "有时": 2, "经常": 3, "总是": 4}
 
 GAD7_OPTIONS = {"没有或极少": 0, "有过几天（≤7天）": 1, "超过一半天数（＞7天）": 2, "几乎每天": 3}
 
 PHQ9_OPTIONS = GAD7_OPTIONS
 
-# [3.0-native-options] 旧 PSS 频率字典（含推测文本「总是」）已废止；
-# 真实选项为 从不/几乎从不/有时/经常/非常频繁，由 survey_scoring 的
-# MATRIX_RULES["压力评估题"] 按 optionN 序号计分（0–4）。
-PSS_OPTIONS = {"从不": 0, "几乎从不": 1, "有时": 2, "经常": 3, "非常频繁": 4}
+PSS_OPTIONS = {"从不": 0, "几乎没有": 1, "有时": 2, "经常": 3, "总是": 4}
 
 GSRS_OPTIONS = {
     "无症状": 1,
@@ -331,23 +324,15 @@ def analyze_survey_responses(responses):
                             else:
                                 q_text = str(ans_name[i])
 
-                        # [3.0-native-options] 原生口径：矩阵题按 optionN 序号计分，
-                        # 必须带上题组标题(matrix)与选项序号(option_idx)，否则计分核心报错。
-                        _val = sub_ans.get("value", "") if isinstance(sub_ans, dict) else ""
-                        _m = re.match(r"option(\d+)$", str(_val))
                         report["scales"][scale_name].append({
                             "question": q_text or title,
                             "answer_text": sub_text,
-                            "matrix": title,
-                            "option_idx": int(_m.group(1)) if _m else None,
                             "type": "matrix_item",
                         })
                 else:
                     report["scales"][scale_name].append({
                         "question": title,
                         "answer_text": str(ans),
-                        "matrix": title,
-                        "option_idx": None,
                         "type": qtype,
                     })
             else:

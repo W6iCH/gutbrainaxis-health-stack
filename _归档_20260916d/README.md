@@ -118,15 +118,7 @@ sudo bash install.sh
 ## 6. 评分逻辑修复
 
 原始计分核心 `survey_analysis.py` 存在多处与国际量表官方规则不符的问题（PSS-14 反向计分缺失、
-VSI/GSRS 量程错误、PSQI 成分算法不符、WHOQOL-BREF 量纲混用等）。
-
-**2026-09-16 起，计分核心已整体替换为「原生编码口径」**（`SCORING_VERSION =
-`survey_scoring:3.0-native-options``，此前 `2.0-official-rules` 已废止）：矩阵题按问卷平台
-自带 `optionN` 序号计分，单选题按**实测真实 label** 显式映射，**未识别即报错**（不再静默丢弃）。
-详见 [`services/sjtu_survey_pro/TECHNICAL.md`](services/sjtu_survey_pro/TECHNICAL.md) §二·A 与
-[`14_评分标准/03_条目库_修正/与已发布版本差异.md`](../14_评分标准/03_条目库_修正/与已发布版本差异.md)。
-
-本仓库还提供：
+VSI/GSRS 量程错误、PSQI 成分算法不符、WHOQOL-BREF 量纲混用等）。本仓库提供：
 
 - [`01_评分修复/审计报告.md`](01_评分修复/审计报告.md) —— 逐条「原逻辑 / 新逻辑 / 影响 / 依据」
 - [`01_评分修复/旧新分回归对照.md`](01_评分修复/旧新分回归对照.md) —— 旧分 vs 新分差异统计（**仅统计量，无个人信息**）
@@ -168,7 +160,7 @@ VSI/GSRS 量程错误、PSQI 成分算法不符、WHOQOL-BREF 量纲混用等）
 
 **计分口径一致性**：基线文件同时包含 `2.0-official-rules` 与 `3.0-native-ordinal` 两个口径块，
 程序按 `app.scoring_version` 选择**与自身计分相同的块**，避免「分数一套口径、基线另一套口径」
-导致的百分位失真。**默认推荐 `3.0-native-options`**（与 `3.0-native-ordinal` 同义，均指原生编码口径）。
+导致的百分位失真。默认推荐 `3.0-native-ordinal`。
 
 **替换为你自己的基线**：
 

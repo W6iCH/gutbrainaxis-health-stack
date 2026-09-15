@@ -15,7 +15,7 @@
     "app.log_dir": { "type": "path", "required": true },
     "app.log_level": { "type": "enum", "required": true, "enum": ["DEBUG", "INFO", "WARNING", "ERROR"] },
     "app.timezone": { "type": "str", "required": true },
-    "app.scoring_version": { "type": "enum", "required": true, "enum": ["3.0-native-options", "3.0-native-ordinal", "2.0-official-rules"] },
+    "app.scoring_version": { "type": "enum", "required": true, "enum": ["3.0-native-ordinal", "2.0-official-rules"] },
 
     "site.domain": { "type": "str", "required": true },
     "site.public_scheme": { "type": "enum", "required": true, "enum": ["http", "https"] },
