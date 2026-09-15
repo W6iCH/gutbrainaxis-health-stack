@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Data Dashboard v2 — Rebuilt for data.gutbrainaxis.online
+Data Dashboard v2 — 数据看板服务
 =========================================================
 Two-level navigation:
   L1: 数据中心 → L2: 总览/量表/饮食/运动/学生档案/统计分析/数据导出

@@ -68,6 +68,8 @@ sudo bash install.sh
 - 控制台初始口令：`$INSTALL_ROOT/config/initial_password.txt`（权限 600，**首次登录后请立即修改**）
 - 自检：`sudo bash verify.sh`
 
+**域名配置（部署时自行设置）**：仓库内一律以 `example.com` 作占位。安装后到「管理控制台 → 端口映射」把各服务映射改成你的真实域名（或编辑 `/etc/research-app/env` 的 `SITE_DOMAIN=`，再在控制台点「应用」重新生成 Nginx 配置并 reload）。前置条件：各子域名的 A 记录已指向本机。
+
 卸载 / 回滚见 [`docs/升级备份与回滚.md`](docs/升级备份与回滚.md)。
 
 ## 4. 目录结构

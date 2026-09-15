@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Data Dashboard v2 — Data access layer for the rebuilt data.gutbrainaxis.online
+Data Dashboard v2 — 数据访问层
 =============================================================================
 Supports: Survey, Diet, Exercise data + Completion Status statistics.
 """
