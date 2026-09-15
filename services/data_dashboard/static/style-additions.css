@@ -1,0 +1,180 @@
+/* ========== TWO-LEVEL NAVIGATION ========== */
+.nav-group {
+    margin-bottom: 4px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.nav-group-title {
+    display: flex;
+    align-items: center;
+    padding: 12px 20px;
+    cursor: pointer;
+    color: #a0aec0;
+    font-size: 14px;
+    font-weight: 600;
+    transition: background 0.2s;
+    user-select: none;
+}
+.nav-group-title:hover {
+    background: rgba(255,255,255,0.08);
+    color: #fff;
+}
+.nav-group-icon {
+    margin-right: 8px;
+    font-size: 16px;
+}
+.nav-group-arrow {
+    margin-left: auto;
+    font-size: 10px;
+    transition: transform 0.2s;
+}
+.nav-group-items {
+    display: block;
+}
+.nav-group-items .nav-item {
+    padding-left: 48px;
+    font-size: 13px;
+}
+
+/* ========== COMPLETION PAGE ========== */
+.legend-bar {
+    display: flex;
+    gap: 24px;
+    padding: 12px 16px;
+    background: #fff;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    flex-wrap: wrap;
+}
+.legend-item {
+    display: flex;
+    align-items: center;
+    font-size: 13px;
+    color: #555;
+}
+.legend-color {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    margin-right: 6px;
+}
+.dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin: 0 2px;
+}
+.dot.green { background: #27ae60; }
+.dot.yellow { background: #f39c12; }
+.dot.red { background: #e74c3c; }
+.dot.empty {
+    background: transparent;
+    border: 2px solid #bbb;
+    width: 10px; height: 10px;
+    box-sizing: border-box;
+}
+.dot-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin-right: 6px;
+}
+.dot-label {
+    font-size: 11px;
+    color: #666;
+}
+
+/* Compact dot bar for diet (weekly segments) */
+.dot-bar {
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+    margin-right: 6px;
+}
+.dot-bar-seg {
+    width: 18px;
+    height: 8px;
+    border-radius: 2px;
+    display: inline-block;
+}
+.dot-count {
+    font-size: 11px;
+    color: #666;
+    margin-left: 4px;
+}
+
+/* ========== STAT CARDS COLOR VARIANTS ========== */
+.stat-card-green { border-left-color: #27ae60; }
+
+/* ========== TABLE ENHANCEMENTS ========== */
+.status-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 4px;
+    vertical-align: middle;
+}
+.data-table th {
+    white-space: nowrap;
+    font-size: 12px;
+    padding: 10px 8px;
+}
+.data-table td {
+    padding: 8px;
+    font-size: 13px;
+}
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* ========== GRID-3 ========== */
+.grid-3 {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+}
+@media (max-width: 900px) {
+    .grid-3 { grid-template-columns: 1fr; }
+}
+
+/* ========== BUTTONS ========== */
+.btn {
+    padding: 8px 16px;
+    background: #3498db;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+}
+.btn:hover { background: #2980b9; }
+.btn-sm {
+    padding: 5px 12px;
+    background: #3498db;
+    color: #fff;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 12px;
+}
+.btn-sm:hover { background: #2980b9; }
+.btn-active { background: #27ae60; }
+
+/* Scoring rules */
+.scoring-rules .rule-row {
+    font-size: 13px;
+    line-height: 2;
+    padding: 2px 0;
+}
+
+/* Diet daily bar */
+.diet-bar-wrap { display: inline-block; }
+.diet-day-bar { display: flex; gap: 1px; margin-bottom: 1px; }
+.diet-day-seg { width: 12px; height: 14px; border-radius: 2px; display: inline-block; }
+.diet-mon-labels { display: flex; justify-content: space-between; padding: 0; }
+.mon-label { font-size: 9px; color: #888; }

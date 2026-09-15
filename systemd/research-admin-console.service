@@ -1,0 +1,29 @@
+# ────────────────────────────────────────────────────────────────────────────
+#  7) 管理控制台   :9000
+# ────────────────────────────────────────────────────────────────────────────
+[Unit]
+Description=Research Admin Console (:9000)
+Documentation=file://__APP_BASE__/docs/控制台使用手册.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__SERVICE_USER__
+WorkingDirectory=__APP_BASE__/admin_console
+EnvironmentFile=-__ENV_FILE__
+# 控制台自身的配置与日志目录（可移植，由 install.sh 注入 __APP_BASE__）
+Environment=APP_BASE=__APP_BASE__
+Environment=CONFIG_DIR=__APP_BASE__/admin_console/config
+Environment=LOG_DIR=__APP_BASE__/logs
+Environment=NGINX_SITES_DIR=/etc/nginx/sites-available
+Environment=NGINX_ENABLED_DIR=/etc/nginx/sites-enabled
+ExecStart=__VENV__ __APP_BASE__/admin_console/app.py
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=research-admin-console
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}学生档案{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>学生档案</h1>
+    <p class="page-subtitle">查看和管理所有参与学生信息</p>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h3>学生列表</h3>
+        <div class="card-actions">
+            <input type="text" id="studentSearch" class="search-input" placeholder="搜索学号或姓名...">
+            <select id="studentStatusFilter" class="form-select">
+                <option value="全部">全部</option>
+                <option value="计划内">计划内</option>
+                <option value="计划外">计划外</option>
+                <option value="已完成">已完成</option>
+                <option value="进行中">进行中</option>
+                <option value="未开始">未开始</option>
+            </select>
+            <button class="btn btn-primary" onclick="exportStudents()">批量导出</button>
+        </div>
+    </div>
+    <div class="card-body" style="overflow-x:auto">
+        <table class="table table-sticky">
+            <thead>
+                <tr>
+                    <th>学号</th>
+                    <th>姓名</th>
+                    <th>邮箱</th>
+                    <th>量表已提交</th>
+                    <th>饮食天数</th>
+                    <th>最后活跃</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody id="studentTableBody"></tbody>
+        </table>
+        <div id="studentPagination" class="pagination"></div>
+        <div class="loading-spinner" id="studentLoading">加载中...</div>
+    </div>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    loadStudents(1);
+    document.getElementById('studentSearch').addEventListener('input', function() { loadStudents(1); });
+    document.getElementById('studentStatusFilter').addEventListener('change', function() { loadStudents(1); });
+});
+
+function loadStudents(page) {
+    const search = document.getElementById('studentSearch').value;
+    const status = document.getElementById('studentStatusFilter').value;
+    document.getElementById('studentLoading').style.display = 'block';
+    fetch('/api/students/list?page=' + page + '&search=' + encodeURIComponent(search) + '&status=' + encodeURIComponent(status))
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('studentLoading').style.display = 'none';
+            const students = data.students || [];
+            const body = document.getElementById('studentTableBody');
+            body.innerHTML = students.map(s => {
+                const badgeClass = s.status === '已完成' ? 'badge-success' : (s.status === '进行中' ? 'badge-warning' : (s.status === '未开始' ? 'badge-danger' : 'badge-default'));
+                return '<tr>' +
+                    '<td><a href="/student/' + s.student_id + '">' + s.student_id + '</a></td>' +
+                    '<td>' + s.name + '</td>' +
+                    '<td class="text-small">' + s.email + '</td>' +
+                    '<td>' + s.survey_count + '/4</td>' +
+                    '<td>' + s.diet_count + '</td>' +
+                    '<td class="text-small">' + (s.last_active||'').slice(0,10) + '</td>' +
+                    '<td><span class="badge ' + badgeClass + '">' + s.status + '</span></td>' +
+                    '<td><a href="/student/' + s.student_id + '" class="btn-sm">查看</a></td>' +
+                    '</tr>';
+            }).join('');
+
+            const total = data.total || 0;
+            const pages = Math.ceil(total / (data.per_page || 50));
+            let pgHtml = '<span>共 ' + total + ' 名学生</span>';
+            for (let i = 1; i <= pages && i <= 20; i++) {
+                pgHtml += '<button class="btn-sm ' + (i===page?'active':'') + '" onclick="loadStudents('+i+')">'+i+'</button>';
+            }
+            document.getElementById('studentPagination').innerHTML = pgHtml;
+        });
+}
+
+function exportStudents() {
+    fetch('/api/students/list?per_page=500')
+        .then(r => r.json())
+        .then(data => {
+            const students = data.students || [];
+            let csv = '学号,姓名,邮箱,量表提交,饮食天数,最后活跃,状态\n';
+            students.forEach(s => {
+                csv += s.student_id + ',' + s.name + ',' + s.email + ',' + s.survey_count + ',' + s.diet_count + ',' + (s.last_active||'') + ',' + s.status + '\n';
+            });
+            const blob = new Blob(['\ufeff' + csv], {type: 'text/csv;charset=utf-8'});
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'students_export.csv';
+            a.click();
+        });
+}
+</script>
+{% endblock %}

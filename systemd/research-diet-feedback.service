@@ -1,0 +1,23 @@
+# ────────────────────────────────────────────────────────────────────────────
+#  2) 饮食反馈页面   :8001
+# ────────────────────────────────────────────────────────────────────────────
+[Unit]
+Description=Research Diet Feedback Server (:8001)
+Documentation=file://__APP_BASE__/docs/常见故障排查.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__SERVICE_USER__
+WorkingDirectory=__APP_BASE__/diet_survey
+EnvironmentFile=-__ENV_FILE__
+ExecStart=__VENV__ __APP_BASE__/diet_survey/diet_feedback_server.py 8001
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=research-diet-feedback
+
+[Install]
+WantedBy=multi-user.target

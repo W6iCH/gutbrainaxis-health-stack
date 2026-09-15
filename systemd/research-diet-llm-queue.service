@@ -1,0 +1,23 @@
+# ────────────────────────────────────────────────────────────────────────────
+#  4) 饮食 LLM 队列后台处理（无端口，持续运行）
+# ────────────────────────────────────────────────────────────────────────────
+[Unit]
+Description=Research Diet LLM Queue Worker
+Documentation=file://__APP_BASE__/docs/常见故障排查.md
+After=network-online.target research-diet-webhook.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__SERVICE_USER__
+WorkingDirectory=__APP_BASE__/diet_survey
+EnvironmentFile=-__ENV_FILE__
+ExecStart=__VENV__ __APP_BASE__/diet_survey/diet_llm_queue.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=research-diet-llm-queue
+
+[Install]
+WantedBy=multi-user.target

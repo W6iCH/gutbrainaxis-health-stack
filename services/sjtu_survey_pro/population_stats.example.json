@@ -1,0 +1,37 @@
+{
+  "_README": [
+    "人群基线统计 —— 配置模板（示例值，非真实数据）",
+    "",
+    "用途：survey_analysis.render_html_report() 通过 population_charts.make_bell_svg()",
+    "     读取本文件，在个人报告里画出「该分数在同侪人群中的位置」的正态分布曲线。",
+    "",
+    "安装方式：",
+    "  cp population_stats.example.json population_stats.json",
+    "  然后把下面的示例数值替换为**你自己的人群基线**。",
+    "",
+    "⚠️ 重要：",
+    "  1. 本文件是示例，数值仅用于跑通流程，不可用于正式报告。",
+    "  2. 基线必须用与本系统**同一版计分规则**（scoring_version=2.0-official-rules）",
+    "     计算，否则百分位会失真。旧版基线是用修正前算法生成的，请勿沿用。",
+    "  3. 各量表的 min/max 必须与 survey_scoring.py 中的量程一致：",
+    "     GAD-7 0-21 / PHQ-9 0-27 / PSQI 0-21 / PSS-14 0-56",
+    "     GSRS 15-75 / VSI 15-90 / WHOQOL-BREF 领域分 4-20",
+    "     DEBQ 三子量表均分 1-5 / IPAQ-S MET-min/周",
+    "  4. 若本文件缺失，图表会自动跳过（make_bell_svg 返回空串），不影响计分与报告生成。"
+  ],
+  "source": "示例占位 —— 请在部署后替换为真实人群基线（并注明样本量与采集时间）",
+  "n": 0,
+  "computed_with": "2.0-official-rules",
+  "scales": {
+    "GAD-7": { "mean": 0.0, "sd": 1.0, "min": 0, "max": 21 },
+    "PHQ-9": { "mean": 0.0, "sd": 1.0, "min": 0, "max": 27 },
+    "PSQI": { "mean": 0.0, "sd": 1.0, "min": 0, "max": 21 },
+    "PSS-14": { "mean": 0.0, "sd": 1.0, "min": 0, "max": 56 },
+    "GSRS": { "mean": 15.0, "sd": 1.0, "min": 15, "max": 75 },
+    "VSI": { "mean": 15.0, "sd": 1.0, "min": 15, "max": 90 },
+    "WHOQOL-BREF": { "mean": 12.0, "sd": 1.0, "min": 4, "max": 20 },
+    "DEBQ-emotional": { "mean": 1.0, "sd": 0.5, "min": 1, "max": 5 },
+    "DEBQ-external": { "mean": 1.0, "sd": 0.5, "min": 1, "max": 5 },
+    "DEBQ-restrained": { "mean": 1.0, "sd": 0.5, "min": 1, "max": 5 }
+  }
+}

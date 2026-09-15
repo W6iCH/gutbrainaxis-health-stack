@@ -1,0 +1,28 @@
+========================================================================
+  脱敏扫描报告  (publish-safety scan)
+========================================================================
+扫描目录 : <repo-root>
+结论     : ✅ PASS — 未发现阻断项
+阻断项   : 0
+警告项   : 76
+
+⚠️  [A] 文件过大，已跳过内容扫描  ×1
+
+⚠️  [A] 疑似真实数据库路径引用  ×36
+
+⚠️  [D] 硬编码 /opt 路径  ×39
+
+------------------------------------------------------------------------
+按目录汇总（前 20）
+     20  services
+     14  services/sjtu_survey_pro
+     11  docs
+      9  services/diet_survey
+      5  01_评分修复
+      4  scripts
+      3  .
+      3  services/admin_console
+      3  services/admin_console/config
+      2  config
+      1  systemd
+      1  services/exercise_survey

@@ -1,0 +1,28 @@
+# ============================================================================
+#  rclone 远端配置模板（OneDrive / 任意 WebDAV / S3 均可）
+# ============================================================================
+#  用法：
+#    sudo cp config/rclone.conf.example /root/.config/rclone/rclone.conf
+#    sudo chmod 600 /root/.config/rclone/rclone.conf
+#    填写 __REPLACE_*__ 占位符后：
+#      rclone lsd <remote>:            # 验证连通
+#
+#  ⚠️ token 字段是真实凭据，务必只保存在 /root/.config/rclone/rclone.conf
+#     获取方式：rclone config  →  new remote  →  按向导授权，自动写入
+# ============================================================================
+
+[onedrive]
+type = onedrive
+# OneDrive personal 的 drive_id / drive_type 由 `rclone config` 授权后自动填充
+drive_id = __REPLACE_ONEDRIVE_DRIVE_ID__
+drive_type = personal
+token = __REPLACE_ONEDRIVE_OAUTH_TOKEN_JSON__
+
+# ── 备选：任意 S3 兼容对象存储 ───────────────────────────────────────────────
+# [s3backup]
+# type = s3
+# provider = Other
+# access_key_id = __REPLACE_ACCESS_KEY_ID__
+# secret_access_key = __REPLACE_SECRET_ACCESS_KEY__
+# endpoint = __REPLACE_ENDPOINT__
+# region = __REPLACE_REGION__

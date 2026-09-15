@@ -1,0 +1,421 @@
+{% extends "base.html" %}
+{% block title %}量表数据中心{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>量表数据中心</h1>
+    <p class="page-subtitle">所有量表数据综合管理与分析</p>
+</div>
+
+<div class="tab-bar" id="scaleTabs">
+    <button class="tab-btn active" data-scale="all">全部量表</button>
+    <button class="tab-btn" data-scale="debq_emotional">DEBQ情绪</button>
+    <button class="tab-btn" data-scale="debq_external">DEBQ外部</button>
+    <button class="tab-btn" data-scale="debq_restrained">DEBQ限制</button>
+    <button class="tab-btn" data-scale="gad7">GAD-7</button>
+    <button class="tab-btn" data-scale="phq9">PHQ-9</button>
+    <button class="tab-btn" data-scale="psqi">PSQI</button>
+    <button class="tab-btn" data-scale="pss14">PSS-14</button>
+    <button class="tab-btn" data-scale="gsrs">GSRS</button>
+    <button class="tab-btn" data-scale="ipaq">IPAQ</button>
+    <button class="tab-btn" data-scale="vsi">VSI</button>
+    <button class="tab-btn" data-scale="whoqol">WHOQOL</button>
+    <button class="tab-btn" data-scale="bmi">BMI</button>
+</div>
+
+<div id="allScaleView" class="tab-content active">
+    <div class="card">
+        <div class="card-header">
+            <h3>所有学生量表数据总表</h3>
+            <div class="card-actions">
+                <input type="text" id="globalSearch" class="search-input" placeholder="搜索学号或姓名...">
+            </div>
+        </div>
+        <div class="card-body" style="overflow-x:auto">
+            <div class="table-wrapper">
+                <table class="table table-sticky" id="allScalesTable">
+                    <thead>
+                        <tr>
+                            <th data-sort="student_id">学号</th>
+                            <th data-sort="name">姓名</th>
+                            <th data-sort="sub_count">提交次数</th>
+                            <th data-sort="debq_emotional_score" class="sortable">DEBQ情绪</th>
+                            <th data-sort="debq_external_score" class="sortable">DEBQ外部</th>
+                            <th data-sort="debq_restrained_score" class="sortable">DEBQ限制</th>
+                            <th data-sort="gad7_score" class="sortable">GAD-7</th>
+                            <th data-sort="phq9_score" class="sortable">PHQ-9</th>
+                            <th data-sort="psqi_score" class="sortable">PSQI</th>
+                            <th data-sort="pss14_score" class="sortable">PSS-14</th>
+                            <th data-sort="gsrs_score" class="sortable">GSRS</th>
+                            <th data-sort="ipaq_score" class="sortable">IPAQ(MET)</th>
+                            <th data-sort="vsi_score" class="sortable">VSI</th>
+                            <th data-sort="whoqol_score" class="sortable">WHOQOL</th>
+                            <th data-sort="bmi_score" class="sortable">BMI</th>
+                            <th data-sort="last_submit">最后提交</th>
+                        </tr>
+                    </thead>
+                    <tbody id="allScalesBody"></tbody>
+                </table>
+            </div>
+            <div class="loading-spinner" id="allScalesLoading">加载中...</div>
+        </div>
+    </div>
+</div>
+
+<div id="singleScaleView" class="tab-content">
+    <div class="grid-2">
+        <div class="card">
+            <div class="card-header">
+                <h3 id="scaleInfoTitle">量表信息</h3>
+            </div>
+            <div class="card-body" id="scaleInfoCard">
+                <div class="loading-spinner">加载中...</div>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-header">
+                <h3>分数分布</h3>
+            </div>
+            <div class="card-body">
+                <canvas id="scaleDistChart" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid-2">
+        <div class="card">
+            <div class="card-header">
+                <h3>水平分布</h3>
+            </div>
+            <div class="card-body">
+                <canvas id="scaleLevelChart" height="200"></canvas>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-header">
+                <h3>统计摘要</h3>
+            </div>
+            <div class="card-body" id="scaleStatsCard">
+                <div class="loading-spinner">加载中...</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h3 id="rankTitle">学生排名</h3>
+        </div>
+        <div class="card-body" style="overflow-x:auto">
+            <table class="table table-sticky" id="scaleRankTable">
+                <thead><tr><th>排名</th><th>学号</th><th>姓名</th><th>分数</th><th>水平</th><th>提交时间</th></tr></thead>
+                <tbody id="scaleRankBody"></tbody>
+            </table>
+            <div class="loading-spinner" id="rankLoading">加载中...</div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h3>交叉分析</h3>
+        </div>
+        <div class="card-body">
+            <div class="form-row">
+                <select id="crossScale1" class="form-select"></select>
+                <select id="crossScale2" class="form-select"></select>
+                <button class="btn" onclick="loadCrossAnalysis()">分析</button>
+            </div>
+            <div class="grid-2" style="margin-top:16px">
+                <div><canvas id="crossChart" height="250"></canvas></div>
+                <div id="crossStats" class="card card-inset"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const scaleDefs = {{ scales|safe }};
+
+function getScoreColor(scale, score) {
+    if (score === null || score === undefined) return '#999';
+    const def = scaleDefs[scale];
+    if (!def) return '#999';
+    const s = parseFloat(score);
+    if (def.normal_label === '低水平' || def.normal === '低水平') {
+        if (s <= 2) return '#27ae60';
+        if (s <= 3) return '#f39c12';
+        return '#e74c3c';
+    }
+    if (typeof def.normal === 'function') {
+        if (def.abnormal_label === '低体力活动' || def.abnormal_label === '低体力活动') {
+            if (def.normal(s)) return '#27ae60';
+            if (def.borderline(s)) return '#f39c12';
+            return '#e74c3c';
+        }
+        if (def.normal(s)) return '#27ae60';
+        if (def.borderline(s)) return '#f39c12';
+        return '#e74c3c';
+    }
+    return '#999';
+}
+
+const scaleKeys = ['debq_emotional','debq_external','debq_restrained','gad7','phq9','psqi','pss14','gsrs','ipaq','vsi','whoqol','bmi'];
+
+document.addEventListener('DOMContentLoaded', function() {
+    const params = new URLSearchParams(window.location.search);
+    const activeScale = params.get('scale');
+
+    // Populate cross analysis selects
+    const sel1 = document.getElementById('crossScale1');
+    const sel2 = document.getElementById('crossScale2');
+    scaleKeys.forEach(k => {
+        const name = scaleDefs[k] ? scaleDefs[k].name : k;
+        sel1.innerHTML += '<option value="' + k + '">' + name + '</option>';
+        sel2.innerHTML += '<option value="' + k + '">' + name + '</option>';
+    });
+    sel2.value = 'phq9';
+
+    // Tab switching
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+            const scale = this.dataset.scale;
+            if (scale === 'all') {
+                document.getElementById('allScaleView').classList.add('active');
+                document.getElementById('singleScaleView').classList.remove('active');
+            } else {
+                document.getElementById('allScaleView').classList.remove('active');
+                document.getElementById('singleScaleView').classList.add('active');
+                loadScaleData(scale);
+                // Update URL
+                history.replaceState(null, '', '/scales?scale=' + scale);
+            }
+        });
+    });
+
+    // Load all scales table
+    loadAllScales();
+
+    // If active scale in URL, trigger that tab
+    if (activeScale && scaleDefs[activeScale]) {
+        const btn = document.querySelector('[data-scale="' + activeScale + '"]');
+        if (btn) btn.click();
+    }
+
+    // Global search
+    document.getElementById('globalSearch').addEventListener('input', function() {
+        filterAllScales(this.value);
+    });
+});
+
+let allScalesData = [];
+
+function loadAllScales() {
+    document.getElementById('allScalesLoading').style.display = 'block';
+    fetch('/api/scales/all')
+        .then(r => r.json())
+        .then(data => {
+            allScalesData = data || [];
+            renderAllScales(data);
+            document.getElementById('allScalesLoading').style.display = 'none';
+        })
+        .catch(() => document.getElementById('allScalesLoading').textContent = '加载失败');
+}
+
+function renderAllScales(data) {
+    const body = document.getElementById('allScalesBody');
+    if (!data || data.length === 0) {
+        body.innerHTML = '<tr><td colspan="15">暂无数据</td></tr>';
+        return;
+    }
+    body.innerHTML = data.map(d => {
+        const sid_link = '<a href="/student/' + d.student_id + '">' + d.student_id + '</a>';
+        const cols = ['student_id','name','sub_count'];
+        const scoreKeys = ['debq_emotional_score','debq_external_score','debq_restrained_score',
+                          'gad7_score','phq9_score','psqi_score','pss14_score','gsrs_score',
+                          'ipaq_score','vsi_score','whoqol_score','bmi_score'];
+        const scaleMap = {
+            'debq_emotional_score':'debq_emotional','debq_external_score':'debq_external',
+            'debq_restrained_score':'debq_restrained','gad7_score':'gad7','phq9_score':'phq9',
+            'psqi_score':'psqi','pss14_score':'pss14','gsrs_score':'gsrs',
+            'ipaq_score':'ipaq','vsi_score':'vsi','whoqol_score':'whoqol','bmi_score':'bmi'
+        };
+        let cells = '<td>' + sid_link + '</td><td>' + d.name + '</td><td>' + d.sub_count + '</td>';
+        scoreKeys.forEach(k => {
+            const val = d[k];
+            const sc = scaleMap[k];
+            const color = getScoreColor(sc, val);
+            const display = val !== null && val !== undefined ? parseFloat(val).toFixed(1) : '-';
+            cells += '<td style="color:' + color + ';font-weight:600">' + display + '</td>';
+        });
+        cells += '<td class="text-small">' + (d.last_submit || '').slice(0,10) + '</td>';
+        return '<tr>' + cells + '</tr>';
+    }).join('');
+}
+
+function filterAllScales(q) {
+    if (!q) {
+        renderAllScales(allScalesData);
+        return;
+    }
+    const filtered = allScalesData.filter(d =>
+        String(d.student_id).includes(q) || (d.name && d.name.includes(q))
+    );
+    renderAllScales(filtered);
+}
+
+let currentScale = null;
+
+function loadScaleData(scale) {
+    currentScale = scale;
+    const def = scaleDefs[scale];
+    document.getElementById('scaleInfoTitle').textContent = def ? def.name : scale;
+
+    fetch('/api/scales/' + scale)
+        .then(r => r.json())
+        .then(data => {
+            // Info card
+            const di = data.definition || def;
+            document.getElementById('scaleInfoCard').innerHTML =
+                '<div class="info-grid">' +
+                '<div><strong>量表名称:</strong> ' + (di.full_name || di.name) + '</div>' +
+                '<div><strong>评分范围:</strong> ' + (di.range || '') + '</div>' +
+                '<div><strong>量表说明:</strong> ' + (di.description || '') + '</div>' +
+                '</div>';
+
+            // Stats
+            const st = data.stats || {};
+            document.getElementById('scaleStatsCard').innerHTML =
+                '<div class="stats-grid">' +
+                '<div class="stat-item"><span class="stat-num">' + st.mean + '</span><span class="stat-lbl">均值</span></div>' +
+                '<div class="stat-item"><span class="stat-num">' + st.median + '</span><span class="stat-lbl">中位数</span></div>' +
+                '<div class="stat-item"><span class="stat-num">' + st.std + '</span><span class="stat-lbl">标准差</span></div>' +
+                '<div class="stat-item"><span class="stat-num">' + st.min + '</span><span class="stat-lbl">最小值</span></div>' +
+                '<div class="stat-item"><span class="stat-num">' + st.max + '</span><span class="stat-lbl">最大值</span></div>' +
+                '<div class="stat-item"><span class="stat-num stat-warn">' + st.abnormal_rate + '%</span><span class="stat-lbl">异常率</span></div>' +
+                '</div>';
+
+            // Distribution histogram
+            const scores = data.scores || [];
+            const bins = 10;
+            const min = st.min || 0;
+            const max = st.max || 100;
+            const binSize = (max - min) / bins || 1;
+            const hist = new Array(bins).fill(0);
+            scores.forEach(s => {
+                const idx = Math.min(bins-1, Math.floor((s - min) / binSize));
+                hist[idx]++;
+            });
+            const binLabels = [];
+            for (let i = 0; i < bins; i++) {
+                binLabels.push((min + i * binSize).toFixed(1) + '-' + (min + (i+1) * binSize).toFixed(1));
+            }
+
+            if (window.distChart) window.distChart.destroy();
+            window.distChart = new Chart(document.getElementById('scaleDistChart'), {
+                type: 'bar',
+                data: {
+                    labels: binLabels,
+                    datasets: [{
+                        label: '人数',
+                        data: hist,
+                        backgroundColor: '#3498db'
+                    }]
+                },
+                options: { responsive: true, plugins: { legend: { display: false } } }
+            });
+
+            // Level pie
+            const dist = data.distribution || {};
+            if (window.levelChart) window.levelChart.destroy();
+            window.levelChart = new Chart(document.getElementById('scaleLevelChart'), {
+                type: 'pie',
+                data: {
+                    labels: ['正常', '临界', '异常'],
+                    datasets: [{
+                        data: [dist['正常']||0, dist['临界']||0, dist['异常']||0],
+                        backgroundColor: ['#27ae60', '#f39c12', '#e74c3c']
+                    }]
+                },
+                options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+            });
+
+            // Ranking table
+            document.getElementById('rankTitle').textContent = (di.name || scale) + ' 学生排名 (按分数升序)';
+            const students = data.students || [];
+            const body = document.getElementById('scaleRankBody');
+            if (students.length === 0) {
+                body.innerHTML = '<tr><td colspan="6">暂无数据</td></tr>';
+            } else {
+                body.innerHTML = students.map((s, i) => {
+                    const clr = s.level === '正常' ? '#27ae60' : (s.level === '临界' ? '#f39c12' : '#e74c3c');
+                    return '<tr>' +
+                        '<td>' + (i+1) + '</td>' +
+                        '<td><a href="/student/' + s.student_id + '">' + s.student_id + '</a></td>' +
+                        '<td>' + s.name + '</td>' +
+                        '<td style="color:' + clr + ';font-weight:600">' + (s.score !== undefined ? parseFloat(s.score).toFixed(1) : '-') + '</td>' +
+                        '<td><span class="badge" style="background:' + clr + '">' + s.level + '</span></td>' +
+                        '<td>' + (s.submitted_at || '').slice(0,10) + '</td>' +
+                        '</tr>';
+                }).join('');
+            }
+            document.getElementById('rankLoading').style.display = 'none';
+        });
+}
+
+function loadCrossAnalysis() {
+    const s1 = document.getElementById('crossScale1').value;
+    const s2 = document.getElementById('crossScale2').value;
+    if (s1 === s2) { alert('请选择不同的量表进行交叉分析'); return; }
+
+    fetch('/api/scales/cross/' + s1 + '/' + s2)
+        .then(r => r.json())
+        .then(data => {
+            const d = data.data || [];
+            const corr = data.correlation || 0;
+
+            if (window.crossChart) window.crossChart.destroy();
+            window.crossChart = new Chart(document.getElementById('crossChart'), {
+                type: 'scatter',
+                data: {
+                    datasets: [{
+                        label: scaleDefs[s1].name + ' vs ' + scaleDefs[s2].name,
+                        data: d.map(p => ({x: p.x, y: p.y})),
+                        backgroundColor: 'rgba(52,152,219,0.6)',
+                        pointRadius: 5
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        x: { title: { display: true, text: scaleDefs[s1].name } },
+                        y: { title: { display: true, text: scaleDefs[s2].name } }
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function(ctx) {
+                                    const p = d[ctx.dataIndex];
+                                    return p.name + ': (' + p.x.toFixed(1) + ', ' + p.y.toFixed(1) + ')';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            let corrColor = corr > 0.5 ? '#e74c3c' : (corr < -0.5 ? '#e74c3c' : (Math.abs(corr) > 0.3 ? '#f39c12' : '#27ae60'));
+            document.getElementById('crossStats').innerHTML =
+                '<h4>交叉分析结果</h4>' +
+                '<div class="info-grid">' +
+                '<div><strong>量表1:</strong> ' + scaleDefs[s1].name + '</div>' +
+                '<div><strong>量表2:</strong> ' + scaleDefs[s2].name + '</div>' +
+                '<div><strong>样本数:</strong> ' + data.n + '</div>' +
+                '<div><strong>皮尔逊相关系数:</strong> <span style="color:' + corrColor + ';font-weight:bold">' + corr + '</span></div>' +
+                '<div><strong>相关强度:</strong> ' + (Math.abs(corr) >= 0.7 ? '强相关' : (Math.abs(corr) >= 0.4 ? '中等相关' : (Math.abs(corr) >= 0.2 ? '弱相关' : '极弱相关或无相关'))) + '</div>' +
+                '</div>';
+        });
+}
+</script>
+{% endblock %}

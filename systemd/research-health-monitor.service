@@ -1,0 +1,18 @@
+# ────────────────────────────────────────────────────────────────────────────
+#  9) 健康监控（定时运行，由 .timer 触发）
+#  本 service 由 research-health-monitor.timer 调用
+# ────────────────────────────────────────────────────────────────────────────
+[Unit]
+Description=Research Health Monitor (triggered by timer)
+Documentation=file://__APP_BASE__/docs/常见故障排查.md
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=__SERVICE_USER__
+WorkingDirectory=__APP_BASE__
+EnvironmentFile=-__ENV_FILE__
+ExecStart=__VENV__ __APP_BASE__/scripts/health_monitor.py --quiet
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=research-health-monitor

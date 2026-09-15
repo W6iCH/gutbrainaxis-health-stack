@@ -1,0 +1,288 @@
+{% extends "base.html" %}
+{% block title %}统计分析{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>统计分析</h1>
+    <p class="page-subtitle">群体数据统计与相关性分析</p>
+</div>
+
+<div class="grid-2">
+    <div class="card">
+        <div class="card-header"><h3>各量表均分对比</h3></div>
+        <div class="card-body"><canvas id="meanCompareChart" height="250"></canvas></div>
+    </div>
+    <div class="card">
+        <div class="card-header"><h3>状态分布</h3></div>
+        <div class="card-body"><canvas id="statusPieChart" height="250"></canvas></div>
+    </div>
+</div>
+
+<div class="grid-2">
+    <div class="card">
+        <div class="card-header"><h3>水平分布堆叠图</h3></div>
+        <div class="card-body"><canvas id="stackedBarChart" height="250"></canvas></div>
+    </div>
+    <div class="card">
+        <div class="card-header"><h3>完成率仪表盘</h3></div>
+        <div class="card-body" style="text-align:center">
+            <canvas id="gaugeChart" height="250"></canvas>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header"><h3>量表相关热力图</h3></div>
+    <div class="card-body">
+        <canvas id="heatmapChart" height="400"></canvas>
+    </div>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+const scaleColors = ['#3498db','#2ecc71','#f39c12','#e74c3c','#9b59b6','#1abc9c','#e67e22','#34495e','#16a085','#c0392b','#2980b9','#8e44ad'];
+
+document.addEventListener('DOMContentLoaded', function() {
+    function formatLevel(level) {
+        if (level === '低水平' || level === '良好' || level === '低压力' || level === '无明显症状' || level === '低内脏焦虑') return '正常';
+        if (level === '中等水平' || level === '一般' || level === '中等压力' || level === '轻度症状' || level === '中等内脏焦虑') return '临界';
+        if (level === '高水平' || level === '较差' || level === '高压力' || level === '明显症状' || level === '高内脏焦虑') return '异常';
+        return level;
+    }
+
+    fetch('/api/stats/overview')
+        .then(r => r.json())
+        .then(data => {
+            const scales = data.scales || {};
+            const completion = data.completion || {};
+
+            // Mean compare chart
+            const labels = Object.values(scales).map(s => s.short);
+            const means = Object.values(scales).map(s => s.mean || 0);
+            new Chart(document.getElementById('meanCompareChart'), {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '均分',
+                        data: means,
+                        backgroundColor: scaleColors.slice(0, labels.length)
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true }
+                    }
+                }
+            });
+
+            // Stacked bar - count normal/borderline/abnormal per scale
+            const scaleKeys = Object.keys(scales);
+            const normalData = [];
+            const borderlineData = [];
+            const abnormalData = [];
+            const scaleLabels = [];
+            scaleKeys.forEach(k => {
+                const s = scales[k];
+                const dist = s.distribution || {};
+                // Normalize level names
+                let n = dist['正常'] || 0;
+                let b = dist['临界'] || 0;
+                let a = dist['异常'] || 0;
+                // Map old level names
+                for (const [key, val] of Object.entries(dist)) {
+                    const f = formatLevel(key);
+                    if (f === '正常') n += val;
+                    else if (f === '临界') b += val;
+                    else if (f === '异常') a += val;
+                }
+                // Deduct the original counts that may have been counted twice
+                if (dist['正常']) n -= dist['正常'];
+                if (dist['临界']) b -= dist['临界'];
+                if (dist['异常']) a -= dist['异常'];
+                // Use original dist
+                normalData.push(dist['正常'] || 0);
+                borderlineData.push(dist['临界'] || 0);
+                abnormalData.push(dist['异常'] || 0);
+                scaleLabels.push(s.short);
+            });
+
+            new Chart(document.getElementById('stackedBarChart'), {
+                type: 'bar',
+                data: {
+                    labels: scaleLabels,
+                    datasets: [
+                        { label: '正常', data: normalData, backgroundColor: '#27ae60' },
+                        { label: '临界', data: borderlineData, backgroundColor: '#f39c12' },
+                        { label: '异常', data: abnormalData, backgroundColor: '#e74c3c' }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } }
+                }
+            });
+
+            // Status pie
+            const sc = completion.status_counts || {};
+            new Chart(document.getElementById('statusPieChart'), {
+                type: 'pie',
+                data: {
+                    labels: ['已完成', '进行中', '未开始'],
+                    datasets: [{
+                        data: [sc['已完成']||0, sc['进行中']||0, sc['未开始']||0],
+                        backgroundColor: ['#27ae60', '#f39c12', '#e74c3c']
+                    }]
+                },
+                options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+            });
+
+            // Gauge chart - completion rate
+            const total = (sc['已完成']||0) + (sc['进行中']||0) + (sc['未开始']||0);
+            const completed = sc['已完成'] || 0;
+            const rate = total > 0 ? (completed / total * 100) : 0;
+            new Chart(document.getElementById('gaugeChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: ['已完成', '未完成'],
+                    datasets: [{
+                        data: [rate, 100 - rate],
+                        backgroundColor: ['#27ae60', '#e0e0e0'],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    cutout: '70%',
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: { callbacks: { label: ctx => ctx.label + ': ' + ctx.parsed + '%' } }
+                    }
+                },
+                plugins: [{
+                    id: 'centerText',
+                    afterDraw: function(chart) {
+                        const { width, height, ctx } = chart;
+                        ctx.save();
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.font = 'bold 28px Arial';
+                        ctx.fillStyle = '#333';
+                        ctx.fillText(rate.toFixed(1) + '%', width/2, height/2 - 10);
+                        ctx.font = '14px Arial';
+                        ctx.fillStyle = '#999';
+                        ctx.fillText('完成率', width/2, height/2 + 20);
+                        ctx.restore();
+                    }
+                }]
+            });
+        });
+
+    // Correlation heatmap
+    fetch('/api/stats/correlation')
+        .then(r => r.json())
+        .then(data => {
+            const labels = data.labels || [];
+            const matrix = data.matrix || [];
+            const n = labels.length;
+            if (n === 0) return;
+
+            // Draw heatmap using canvas
+            const canvas = document.getElementById('heatmapChart');
+            const ctx = canvas.getContext('2d');
+            const parent = canvas.parentElement;
+            const w = parent.clientWidth - 80;
+            const h = Math.max(400, n * 40 + 60);
+            canvas.width = w;
+            canvas.height = h;
+
+            const cellSize = Math.min((w - 120) / n, 40);
+            const xStart = 80;
+            const yStart = 30;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw labels
+            ctx.font = '11px Arial';
+            ctx.fillStyle = '#333';
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'middle';
+            labels.forEach((l, i) => {
+                ctx.fillText(l, xStart - 8, yStart + i * cellSize + cellSize/2);
+            });
+            ctx.textAlign = 'left';
+            labels.forEach((l, i) => {
+                ctx.fillText(l, xStart + n * cellSize + 8, yStart + i * cellSize + cellSize/2);
+            });
+
+            // Draw cells
+            for (let i = 0; i < n; i++) {
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                for (let j = 0; j < n; j++) {
+                    const val = matrix[i] ? matrix[i][j] : 0;
+                    const x = xStart + j * cellSize;
+                    const y = yStart + i * cellSize;
+
+                    // Color based on value: red for positive, blue for negative
+                    let r, g, b;
+                    if (val > 0) {
+                        r = 231; g = Math.round(76 + (76-231) * val); b = Math.round(60 + (60-231) * val);
+                        // Actually let's use a simpler gradient
+                        const intensity = Math.abs(val);
+                        if (val > 0) {
+                            r = 255; g = Math.round(255 * (1 - intensity)); b = Math.round(255 * (1 - intensity));
+                        } else {
+                            r = Math.round(255 * (1 - intensity)); g = Math.round(255 * (1 - intensity)); b = 255;
+                        }
+                    } else if (val < 0) {
+                        const intensity = Math.abs(val);
+                        r = Math.round(255 * (1 - intensity)); g = Math.round(255 * (1 - intensity)); b = 255;
+                    } else {
+                        r = 255; g = 255; b = 255;
+                    }
+
+                    ctx.fillStyle = `rgb(${Math.min(255,r)},${Math.min(255,g)},${Math.min(255,b)})`;
+                    ctx.fillRect(x, y, cellSize, cellSize);
+                    ctx.strokeStyle = '#ddd';
+                    ctx.strokeRect(x, y, cellSize, cellSize);
+
+                    // Text
+                    ctx.fillStyle = Math.abs(val) > 0.5 ? '#fff' : '#333';
+                    ctx.font = '10px Arial';
+                    ctx.fillText(val.toFixed(2), x + cellSize/2, y + cellSize/2);
+                }
+            }
+
+            // Color legend at bottom
+            const legendY = yStart + n * cellSize + 20;
+            ctx.textAlign = 'left';
+            ctx.font = '11px Arial';
+            ctx.fillStyle = '#333';
+            ctx.fillText('-1.0', xStart, legendY + 15);
+            for (let i = 0; i <= 20; i++) {
+                const t = i / 20;
+                const x = xStart + i * (n * cellSize / 20);
+                let r, g, b;
+                if (t < 0.5) {
+                    const v = t * 2;
+                    r = Math.round(255 * (1 - v));
+                    g = Math.round(255 * (1 - v));
+                    b = 255;
+                } else {
+                    const v = (t - 0.5) * 2;
+                    r = 255;
+                    g = Math.round(255 * (1 - v));
+                    b = Math.round(255 * (1 - v));
+                }
+                ctx.fillStyle = `rgb(${r},${g},${b})`;
+                ctx.fillRect(x, legendY, n * cellSize / 20, 12);
+            }
+            ctx.fillStyle = '#333';
+            ctx.textAlign = 'right';
+            ctx.fillText('+1.0', xStart + n * cellSize, legendY + 15);
+        });
+});
+</script>
+{% endblock %}

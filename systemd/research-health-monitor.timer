@@ -1,0 +1,14 @@
+# ────────────────────────────────────────────────────────────────────────────
+#  健康监控定时器 — 每 30 分钟触发一次
+# ────────────────────────────────────────────────────────────────────────────
+[Unit]
+Description=Research Health Monitor Timer (every 30 min)
+Documentation=file://__APP_BASE__/docs/07_监控系统.md
+
+[Timer]
+OnCalendar=*:0/30
+Persistent=true
+RandomizedDelaySec=30
+
+[Install]
+WantedBy=timers.target

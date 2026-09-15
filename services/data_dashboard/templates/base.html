@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}数据看板{% endblock %} - 大学生健康数据平台</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style-additions.css">
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <div class="layout">
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-logo">DH</div>
+                <div class="sidebar-title">健康数据看板</div>
+            </div>
+            <nav class="sidebar-nav">
+                <!-- L1: 数据中心 -->
+                <div class="nav-group">
+                    <div class="nav-group-title" onclick="toggleNavGroup(this)">
+                        <span class="nav-group-icon">&#9670;</span>
+                        <span>数据中心</span>
+                        <span class="nav-group-arrow">&#9660;</span>
+                    </div>
+                    <div class="nav-group-items">
+                        <a href="/" class="nav-item {% if request.path == '/' %}active{% endif %}">
+                            <span class="nav-label">总览面板</span>
+                        </a>
+                        <a href="/scales" class="nav-item {% if request.path.startswith('/scales') %}active{% endif %}">
+                            <span class="nav-label">量表数据</span>
+                        </a>
+                        <a href="/diet" class="nav-item {% if request.path == '/diet' %}active{% endif %}">
+                            <span class="nav-label">饮食数据</span>
+                        </a>
+                        <a href="/exercise" class="nav-item {% if request.path == '/exercise' %}active{% endif %}">
+                            <span class="nav-label">运动数据</span>
+                        </a>
+                        <a href="/students" class="nav-item {% if request.path.startswith('/students') and not request.path.startswith('/student/') %}active{% endif %}">
+                            <span class="nav-label">学生档案</span>
+                        </a>
+                        <a href="/stats" class="nav-item {% if request.path == '/stats' %}active{% endif %}">
+                            <span class="nav-label">统计分析</span>
+                        </a>
+                        <a href="/export" class="nav-item {% if request.path == '/export' %}active{% endif %}">
+                            <span class="nav-label">数据导出</span>
+                        </a>
+                    </div>
+                </div>
+                <!-- L1: 完成情况统计 -->
+                <div class="nav-group">
+                    <div class="nav-group-title" onclick="toggleNavGroup(this)">
+                        <span class="nav-group-icon">&#10003;</span>
+                        <span>完成情况统计</span>
+                        <span class="nav-group-arrow">&#9660;</span>
+                    </div>
+                    <div class="nav-group-items">
+                        <a href="/completion" class="nav-item {% if request.path == '/completion' %}active{% endif %}">
+                            <span class="nav-label">完成情况总览</span>
+                        </a>
+                    </div>
+                </div>
+            </nav>
+        </aside>
+        <main class="main-content">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+    <script>
+    function toggleNavGroup(el) {
+        const items = el.nextElementSibling;
+        const arrow = el.querySelector('.nav-group-arrow');
+        if (items.style.display === 'none') {
+            items.style.display = 'block';
+            arrow.textContent = '▼';
+        } else {
+            items.style.display = 'none';
+            arrow.textContent = '▶';
+        }
+    }
+    // Keep current group open
+    document.addEventListener('DOMContentLoaded', function() {
+        const currentPath = '{{ request.path }}';
+        const groups = document.querySelectorAll('.nav-group');
+        groups.forEach(g => {
+            const items = g.querySelector('.nav-group-items');
+            const active = items.querySelector('.nav-item.active');
+            if (!active) {
+                // Check if current path matches any sub-item
+                // Keep data center open by default
+                const title = g.querySelector('.nav-group-title span:nth-child(2)');
+                if (title && title.textContent.includes('数据中心')) {
+                    items.style.display = 'block';
+                } else {
+                    items.style.display = 'none';
+                }
+            } else {
+                items.style.display = 'block';
+            }
+        });
+    });
+    </script>
+    <script src="/static/app.js"></script>
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>

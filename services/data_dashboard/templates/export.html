@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}数据导出{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>数据导出中心</h1>
+    <p class="page-subtitle">按需导出量表评分、问卷答案和饮食记录</p>
+</div>
+
+<div class="card">
+    <div class="card-header"><h3>1. 量表评分导出</h3></div>
+    <div class="card-body">
+        <div class="export-section">
+            <div class="form-row">
+                <label>量表选择:</label>
+                <select id="exportScaleSelect" class="form-select">
+                    <option value="">全部量表</option>
+                    <option value="debq_emotional">DEBQ情绪性饮食</option>
+                    <option value="debq_external">DEBQ外部性饮食</option>
+                    <option value="debq_restrained">DEBQ限制性饮食</option>
+                    <option value="gad7">GAD-7</option>
+                    <option value="phq9">PHQ-9</option>
+                    <option value="psqi">PSQI</option>
+                    <option value="pss14">PSS-14</option>
+                    <option value="gsrs">GSRS</option>
+                    <option value="ipaq">IPAQ</option>
+                    <option value="vsi">VSI</option>
+                    <option value="whoqol">WHOQOL</option>
+                    <option value="bmi">BMI</option>
+                </select>
+                <label>学生学号(可选):</label>
+                <input type="text" id="exportScaleStudent" class="search-input" placeholder="留空导出全部" style="width:150px">
+                <label>格式:</label>
+                <select id="exportScaleFormat" class="form-select">
+                    <option value="csv">CSV</option>
+                    <option value="json">JSON</option>
+                </select>
+                <button class="btn btn-primary" onclick="exportData('scales')">下载</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header"><h3>2. 问卷答案导出</h3></div>
+    <div class="card-body">
+        <div class="export-section">
+            <div class="form-row">
+                <label>学生学号(可选):</label>
+                <input type="text" id="exportRespStudent" class="search-input" placeholder="留空导出全部" style="width:150px">
+                <label>格式:</label>
+                <select id="exportRespFormat" class="form-select">
+                    <option value="csv">CSV (逐题展开)</option>
+                    <option value="json">JSON</option>
+                </select>
+                <button class="btn btn-primary" onclick="exportData('responses')">下载</button>
+            </div>
+            <p class="text-muted">包含所有150+道题目的学生答案，CSV格式每行一题一答</p>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header"><h3>3. 饮食记录导出</h3></div>
+    <div class="card-body">
+        <div class="export-section">
+            <div class="form-row">
+                <label>学生学号(可选):</label>
+                <input type="text" id="exportDietStudent" class="search-input" placeholder="留空导出全部" style="width:150px">
+                <label>开始日期:</label>
+                <input type="text" id="exportDietFrom" class="search-input" placeholder="YYYY-MM-DD" style="width:120px">
+                <label>结束日期:</label>
+                <input type="text" id="exportDietTo" class="search-input" placeholder="YYYY-MM-DD" style="width:120px">
+                <label>格式:</label>
+                <select id="exportDietFormat" class="form-select">
+                    <option value="csv">CSV</option>
+                    <option value="json">JSON</option>
+                </select>
+                <button class="btn btn-primary" onclick="exportData('diet')">下载</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header"><h3>4. 综合数据导出 (量表+饮食)</h3></div>
+    <div class="card-body">
+        <div class="export-section">
+            <div class="form-row">
+                <label>格式:</label>
+                <select id="exportCombinedFormat" class="form-select">
+                    <option value="json">JSON (综合包)</option>
+                </select>
+                <button class="btn btn-primary" onclick="exportData('combined')">下载</button>
+            </div>
+            <p class="text-muted">包含所有学生的量表评分和饮食记录的综合数据包</p>
+        </div>
+    </div>
+</div>
+
+<style>
+.export-section { padding: 8px 0; }
+.form-row { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.form-row label { font-size:14px; color:#555; white-space:nowrap; }
+</style>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+function exportData(type) {
+    let url = '/api/export/';
+    switch(type) {
+        case 'scales': {
+            const scale = document.getElementById('exportScaleSelect').value;
+            const student = document.getElementById('exportScaleStudent').value;
+            const format = document.getElementById('exportScaleFormat').value;
+            url += 'scales?format=' + format;
+            if (scale) url += '&scale=' + scale;
+            if (student) url += '&student_id=' + student;
+            break;
+        }
+        case 'responses': {
+            const student = document.getElementById('exportRespStudent').value;
+            const format = document.getElementById('exportRespFormat').value;
+            url += 'responses?format=' + format;
+            if (student) url += '&student_id=' + student;
+            break;
+        }
+        case 'diet': {
+            const student = document.getElementById('exportDietStudent').value;
+            const from = document.getElementById('exportDietFrom').value;
+            const to = document.getElementById('exportDietTo').value;
+            const format = document.getElementById('exportDietFormat').value;
+            url += 'diet?format=' + format;
+            if (student) url += '&student_id=' + student;
+            if (from) url += '&date_from=' + from;
+            if (to) url += '&date_to=' + to;
+            break;
+        }
+        case 'combined': {
+            url += 'combined';
+            break;
+        }
+    }
+    window.open(url, '_blank');
+}
+</script>
+{% endblock %}

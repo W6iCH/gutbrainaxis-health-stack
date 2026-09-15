@@ -1,0 +1,17 @@
+# ────────────────────────────────────────────────────────────────────────────
+#  10) rclone 远程备份（定时运行，由 .timer 触发）
+# ────────────────────────────────────────────────────────────────────────────
+[Unit]
+Description=Research Rclone Backup (triggered by timer)
+Documentation=file://__APP_BASE__/docs/常见故障排查.md
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=__SERVICE_USER__
+WorkingDirectory=__APP_BASE__
+EnvironmentFile=-__ENV_FILE__
+ExecStart=__APP_BASE__/scripts/rclone-backup.sh
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=research-rclone-backup

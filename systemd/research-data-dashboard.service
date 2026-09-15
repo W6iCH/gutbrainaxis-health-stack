@@ -1,0 +1,23 @@
+# ────────────────────────────────────────────────────────────────────────────
+#  8) 数据看板   :8090
+# ────────────────────────────────────────────────────────────────────────────
+[Unit]
+Description=Research Data Dashboard (:8090)
+Documentation=file://__APP_BASE__/docs/常见故障排查.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__SERVICE_USER__
+WorkingDirectory=__APP_BASE__/data_dashboard
+EnvironmentFile=-__ENV_FILE__
+ExecStart=__VENV__ __APP_BASE__/data_dashboard/app.py
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=research-data-dashboard
+
+[Install]
+WantedBy=multi-user.target

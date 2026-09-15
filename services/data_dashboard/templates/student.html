@@ -1,0 +1,557 @@
+{% extends "base.html" %}
+{% block title %}学生详情{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1 id="studentPageTitle">学生详情</h1>
+    <p class="page-subtitle" id="studentPageSubtitle">学号: {{ student_id }}</p>
+</div>
+
+<!-- Tabs -->
+<div class="tab-bar" id="studentTabs">
+    <button class="tab-btn active" data-tab="overview">量表概况</button>
+    <button class="tab-btn" data-tab="responses">详细答题</button>
+    <button class="tab-btn" data-tab="diet">饮食记录</button>
+    <button class="tab-btn" data-tab="exercise">运动记录</button>
+    <button class="tab-btn" data-tab="trends">趋势图表</button>
+    <button class="tab-btn" data-tab="raw">原始数据</button>
+</div>
+
+<!-- Tab 1: Overview -->
+<div class="tab-content active" id="tab-overview">
+    <div class="card" id="studentInfoCard">
+        <div class="card-header"><h3>基本信息</h3></div>
+        <div class="card-body"><div class="loading-spinner">加载中...</div></div>
+    </div>
+    <div class="card">
+        <div class="card-header"><h3>量表得分总览</h3></div>
+        <div class="card-body">
+            <div class="scale-grid" id="scaleCardsGrid"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Tab 2: Responses - MOST CRITICAL -->
+<div class="tab-content" id="tab-responses">
+    <div class="card">
+        <div class="card-header">
+            <h3>详细答题记录</h3>
+            <div class="card-actions">
+                <select id="responseSelector" class="form-select"></select>
+                <button class="btn-sm" onclick="expandAllResponses()">展开全部</button>
+                <button class="btn-sm" onclick="collapseAllResponses()">收起全部</button>
+            </div>
+        </div>
+        <div class="card-body" id="responsesContent">
+            <div class="loading-spinner">加载中...</div>
+        </div>
+    </div>
+</div>
+
+<!-- Tab 3: Diet -->
+<div class="tab-content" id="tab-diet">
+    <div class="card">
+        <div class="card-header">
+            <h3>饮食记录</h3>
+            <div class="card-actions">
+                <input type="text" id="dietDateFromS" class="search-input" placeholder="开始日期" style="width:120px">
+                <input type="text" id="dietDateToS" class="search-input" placeholder="结束日期" style="width:120px">
+                <button class="btn-sm" onclick="loadStudentDiet()">查询</button>
+            </div>
+        </div>
+        <div class="card-body" id="studentDietContent">
+            <div class="loading-spinner">加载中...</div>
+        </div>
+    </div>
+</div>
+
+<!-- Tab 4: Exercise -->
+<div class="tab-content" id="tab-exercise">
+    <div class="card">
+        <div class="card-header"><h3>运动记录</h3></div>
+        <div class="card-body" id="studentExerciseContent">
+            <div class="loading-spinner">加载中...</div>
+        </div>
+    </div>
+</div>
+
+<!-- Tab 5: Trends -->
+<div class="tab-content" id="tab-trends">
+    <div class="card">
+        <div class="card-header"><h3>量表趋势图表</h3></div>
+        <div class="card-body">
+            <div class="chart-grid">
+                <div><canvas id="trendDebqE" height="180"></canvas></div>
+                <div><canvas id="trendDebqEx" height="180"></canvas></div>
+                <div><canvas id="trendDebqR" height="180"></canvas></div>
+                <div><canvas id="trendGad7" height="180"></canvas></div>
+                <div><canvas id="trendPhq9" height="180"></canvas></div>
+                <div><canvas id="trendPsqi" height="180"></canvas></div>
+                <div><canvas id="trendPss14" height="180"></canvas></div>
+                <div><canvas id="trendGsrs" height="180"></canvas></div>
+                <div><canvas id="trendIpaq" height="180"></canvas></div>
+                <div><canvas id="trendVsi" height="180"></canvas></div>
+                <div><canvas id="trendWhoqol" height="180"></canvas></div>
+                <div><canvas id="trendBmi" height="180"></canvas></div>
+            </div>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-header"><h3>饮食记录趋势</h3></div>
+        <div class="card-body"><canvas id="trendDiet" height="200"></canvas></div>
+    </div>
+</div>
+
+<!-- Tab 6: Raw Data -->
+<div class="tab-content" id="tab-raw">
+    <div class="card">
+        <div class="card-header"><h3>原始数据</h3></div>
+        <div class="card-body" id="rawDataContent">
+            <div class="loading-spinner">加载中...</div>
+        </div>
+    </div>
+</div>
+
+<style>
+.scale-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:12px; }
+.scale-card { background:#f8f9fa; border-radius:8px; padding:16px; border-left:4px solid #3498db; position:relative; }
+.scale-card .s-label { font-size:14px; color:#666; margin-bottom:4px; }
+.scale-card .s-score { font-size:28px; font-weight:700; }
+.scale-card .s-level { font-size:13px; margin-top:4px; }
+.scale-card .s-trend { position:absolute; top:12px; right:12px; font-size:18px; }
+.scale-card .s-progress { height:6px; background:#e0e0e0; border-radius:3px; margin-top:8px; overflow:hidden; }
+.scale-card .s-progress-bar { height:100%; border-radius:3px; transition:width 0.5s; }
+.chart-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:16px; }
+.scale-section { border:1px solid #e0e0e0; border-radius:8px; margin-bottom:12px; overflow:hidden; }
+.scale-section-header { background:#f0f4f8; padding:10px 16px; cursor:pointer; display:flex; justify-content:space-between; align-items:center; font-weight:600; }
+.scale-section-header:hover { background:#e8edf4; }
+.scale-section-body { padding:0; }
+.scale-section-body table { margin:0; }
+.scale-section-body table td { border-bottom:1px solid #f0f0f0; }
+.qa-answer { font-weight:600; }
+.qa-safe { color:#27ae60; }
+.qa-warn { color:#f39c12; }
+.qa-danger { color:#e74c3c; }
+.raw-json { background:#1a1a2e; color:#e0e0e0; border-radius:8px; padding:16px; font-family:monospace; font-size:13px; white-space:pre-wrap; overflow-x:auto; }
+.raw-json .key { color:#7ec8e3; }
+.raw-json .string { color:#ce9178; }
+.raw-json .number { color:#b5cea8; }
+.raw-json .bool { color:#569cd6; }
+.raw-json .null { color:#808080; }
+</style>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const studentId = '{{ student_id }}';
+const scaleGroupMapping = {
+    '基本信息': { qs: [], scoreKey: null, analysisKey: 'basic_info' },
+    'DEBQ量表情绪性饮食': { qs: ['当你感到烦躁时，是否有进食的欲望？','当你无事可做时，是否有进食的欲望？','当你感到沮丧或气馁时，是否有进食的欲望？','当你感到孤独时，是否有进食的欲望？','当有人让你失望时，是否有进食的欲望？','当你生气时，是否有进食的欲望？','当你预感即将发生不愉快的事情时，是否有进食的欲望？','当你感到焦虑、担忧或紧张时，是否有进食的欲望？','当事情不顺利或出错时，是否有进食的欲望？','当你感到害怕时，是否有进食的欲望？','当你感到失望时，是否有进食的欲望？','当你情绪低落时，是否有进食的欲望？','当你感到无聊或不安时，是否有进食的欲望？'], scoreKey: 'debq_emotional', maxScore: 5 },
+    'DEBQ量表外部性饮食': { qs: ['如果食物味道很好，你是否会吃得比平时多？','如果食物闻起来和看起来都很诱人，你是否会吃得比平时多？','如果你看到或闻到美味的食物，是否有进食的欲望？','如果你有美味的食物，是否会立刻吃掉？','如果你经过面包店，是否有购买美味食物的欲望？','如果你经过小吃店或咖啡馆，是否有购买美味食物的欲望？','如果你看到别人在吃东西，是否也会有进食的欲望？','你能否抵制美味食物的诱惑？','当你看到别人吃东西时，是否会吃得比平时多？','在准备餐食时，你是否会忍不住先吃点东西？'], scoreKey: 'debq_external', maxScore: 5 },
+    'DEBQ量表限制性饮食': { qs: ['如果你体重增加了，你是否会吃得比平时少？','你是否会在用餐时故意吃得比你想吃的量少？','你是否会因担心体重而拒绝提供的食物或饮料？','你是否会严格控制自己的饮食？','你是否会刻意选择有助于减肥的食物？','当你吃得过多时，接下来的几天是否会减少食量？','你是否会为了不增重而刻意减少饮食？','你是否会因关注体重而避免在两餐之间进食？','你是否会因关注体重而在晚上尽量避免进食？','你在选择食物时是否会考虑体重因素？'], scoreKey: 'debq_restrained', maxScore: 5 },
+    'GAD-7广泛性焦虑量表': { qs: ['过去两周内，您是否感到不安、焦虑或烦躁？','过去两周内，您是否难以停止或无法控制担忧？','过去两周内，您是否对各种各样的事情过度担忧？','过去两周内，您是否很难放松下来？','过去两周内，您是否感到坐立不安或心神不定？','过去两周内，您是否容易烦恼或急躁？','过去两周内，您是否会害怕将有可怕的事发生？'], scoreKey: 'gad7', maxScore: 3 },
+    'PHQ-9抑郁量表': { qs: ['过去两周，您是否做事时提不起劲或没有兴趣？','过去两周，您是否感到情绪低落、沮丧或无望？','过去两周，您是否入睡困难、睡不安稳或睡眠过多？','过去两周，您是否感到疲倦或没有活力？','过去两周，您是否有食欲不振或过度进食（吃太多）？','过去两周，您是否觉得自己很糟，或觉得自己很失败，或让自己或家人失望？','过去两周内，您是否对事物专注有困难，例如看书或看电视不能集中注意力？','过去两周内，您是否动作或说话速度变慢到别人已经觉察，或者相反，烦躁或坐立不安、动来动去的情况更胜于平常？','过去两周内，您是否有不如死掉或用某种方式伤害自己的念头？'], scoreKey: 'phq9', maxScore: 3 },
+    'PSQI匹兹堡睡眠质量指数量表': { qs: ['总的来说，您认为自己近一个月的睡眠质量如何？','近一个月，您每晚实际睡眠时间（非卧床时间）大约是多少？','近一个月，您每晚实际睡了几个小时（平均值）？','请计算一下您的睡眠效率','近一个月，您是否因入睡困难','近一个月，您是否因夜间易醒或早醒而影响睡眠？','近一个月，您是否因夜间去厕所而影响睡眠？','近一个月，您是否因呼吸不畅而影响睡眠？','近一个月，您是否因咳嗽或打鼾而影响睡眠？','近一个月，您是否因感觉太冷而影响睡眠？','近一个月，您是否因感觉太热而影响睡眠？','近一个月，您是否因做噩梦而影响睡眠？','近一个月，您是否因疼痛不适而影响睡眠？','近一个月，您是否有其他事情影响睡眠？','近一个月，您是否使用药物帮助睡眠？','近一个月，您白天是否感到困倦或精力不足？','近一个月，您的生活或工作效率是否因睡眠问题受影响？'], scoreKey: 'psqi', maxScore: 3 },
+    'PSS-14知觉压力量表': { qs: ['在过去一个月里，你因为意外发生的事情而感到不安。','在过去一个月里，你觉得自己无法控制生活中的重要事情。','在过去一个月里，你感到紧张和压力。','在过去一个月里，你处于疲惫的状态。','在过去一个月里，你感觉自己无法完成必须做的事情。','在过去一个月里，你感到困难的事情堆积如山，以至于你无法处理。','在过去一个月里，你因为你无法控制的事情而生气。','在过去一个月里，你经常想到有些事情是自己必须完成的。','在过去一个月里，你感到能有效地应对生活中不断发生的变化。','在过去一个月里，你感觉自己处于领先地位。','在过去一个月里，你感到事情顺心如意。','在过去一个月里，你感觉自己可以成功地处理生活琐事和烦恼。','在过去一个月里，你能掌控你的时间管理方式。','在过去一个月里，你对自己处理个人问题的能力感到自信。'], scoreKey: 'pss14', maxScore: 4 },
+    'GSRS胃肠道症状评定量表': { qs: ['烧心（胃灼热，胸骨后灼热）','反酸（喉咙酸味感）','上腹部疼痛（胃疼）','下腹部疼痛（肚脐周围绞痛）','腹胀（餐后饱胀，如 "吃一顿管一天"）','打嗝或嗳气','恶心','呕吐','腹泻','稀便 / 水样便','便急（突然强烈便意）','便秘','排便费力','排便不净感','大便干硬'], scoreKey: 'gsrs', maxScore: 7 },
+    'IPAQ国际体力活动量表': { qs: ['最近 7 天内，您有几天做了剧烈的体育活动','在这其中一天您通常会花多少分钟在剧烈的体育活动上？','最近 7 天内，您有几天做了适度的体育活动','在这其中一天您通常会花多少时间在适度的体育活动上？','最近 7 天内，您有几天是步行','在这其中一天您通常花多少时间在步行上？','最近七天内，工作日您有多久时间是坐着的？'], scoreKey: 'ipaq' },
+    'VSI内脏敏感性指数': { qs: ['我容易注意到轻微的胃胀或胃肠道不适感。','压力大时（如考试期间），我常会感到肠胃不适。','餐后若出现肠胃不适（如打嗝或腹胀），我会反复回想是否吃错了东西。','当我感觉到腹部不适时，就会觉得很沮丧。','肠胃不适时，我很难集中精力完成作业或实验。','我经常担心自己的消化系统会出问题。','我常常为肠胃道问题而担心和焦虑。','即使轻微肠胃不适，我也会在寝室休息而非去上课或朋友聚会。','若腹泻持续两天，我会感到恐慌并立刻就医。','为了避免肠胃不适，我尽量不吃辛辣或油炸食品。','我尝试通过运动（如跑步、球类）缓解肠胃不适。','我相信偶尔的肠胃问题不会影响长期健康。','我认为压力过大是学生群体肠胃不适的主要原因。','突然的肠胃不适（如腹痛）会让我担心自己得了重病。','我很难享受生活，因为无法摆脱腹部不适的困扰。'], scoreKey: 'vsi', maxScore: 7 },
+    'WHOQOL-BREF生存质量量表': { qs: ['您如何评价您的生存质量？','您对自己的健康状况满意吗？','您觉得疼痛妨碍您去做自己需要做的事情吗？','您是否需要依靠医疗帮助进行日常活动？','您有充沛的精力去应付日常生活吗？','您行动的能力如何？','您对自己的睡眠情况满意吗？','您对自己做日常生活事情的能力满意吗？','您对自己的工作能力满意吗？','您对自己满意吗？','您对自己的人际关系满意吗？','您对家人满意吗？','您对自己从朋友那里得到的支持满意吗？','您对自己居住地的条件满意吗？','您对得到卫生保健服务的方便程度满意吗？','您对自己的交通情况满意吗？','您觉得生活有乐趣吗？','您觉得自己的生活有意义吗？','您能集中注意力吗？','您认为自己的外形过得去吗？','您有消极感受吗（如情绪低落、绝望、焦虑、忧郁）？','日常生活中您感觉安全吗？','您的钱够用吗？','在日常生活中您需要的信息都齐备吗？','您有机会进行休闲活动吗？','家庭摩擦影响您的生活吗？','您的食欲怎么样？','如果让您综合以上各方面给自己的生存质量打一个总分，您打多少分？'], scoreKey: 'whoqol', maxScore: 5 },
+    '饮食频率': { qs: [], scoreKey: null },
+    '食物份量': { qs: [], scoreKey: null }
+};
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Tab switching
+    document.querySelectorAll('#studentTabs .tab-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('#studentTabs .tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            this.classList.add('active');
+            document.getElementById('tab-' + this.dataset.tab).classList.add('active');
+        });
+    });
+
+    loadStudentOverview();
+    loadStudentResponses();
+    loadStudentDiet();
+    loadStudentExercise();
+    loadStudentTrends();
+    loadStudentRaw();
+});
+
+function loadStudentOverview() {
+    fetch('/api/student/' + studentId + '/overview')
+        .then(r => r.json())
+        .then(data => {
+            if (!data || !data.info) return;
+            const info = data.info;
+            const badgeClass = info.status === '已完成' ? 'badge-success' : (info.status === '进行中' ? 'badge-warning' : (info.status === '未开始' ? 'badge-danger' : 'badge-default'));
+            document.getElementById('studentPageTitle').textContent = info.name + ' - 详细档案';
+            document.getElementById('studentPageSubtitle').textContent = '学号: ' + info.student_id;
+
+            document.querySelector('#studentInfoCard .card-body').innerHTML =
+                '<div class="info-grid">' +
+                '<div><strong>学号:</strong> ' + info.student_id + '</div>' +
+                '<div><strong>姓名:</strong> ' + info.name + '</div>' +
+                '<div><strong>邮箱:</strong> ' + info.email + '</div>' +
+                '<div><strong>状态:</strong> <span class="badge ' + badgeClass + '">' + info.status + '</span></div>' +
+                '<div><strong>量表提交:</strong> ' + info.submission_count + ' 次</div>' +
+                '<div><strong>饮食记录:</strong> ' + (info.diet_count||0) + ' 条</div>' +
+                '<div><strong>首次提交:</strong> ' + (info.first_submit||'').slice(0,16) + '</div>' +
+                '<div><strong>最近提交:</strong> ' + (info.last_submit||'').slice(0,16) + '</div>' +
+                '</div>';
+
+            // Scale cards
+            const cards = data.scale_cards || [];
+            const grid = document.getElementById('scaleCardsGrid');
+            grid.innerHTML = cards.map(c => {
+                const levelColor = c.level === '正常' || c.level === '低水平' || c.level === '良好' ? '#27ae60' :
+                                  (c.level === '临界' || c.level === '中等水平' ? '#f39c12' : '#e74c3c');
+                const trendIcon = c.trend === 'up' ? '&#9650;' : (c.trend === 'down' ? '&#9660;' : '&#9644;');
+                const trendTitle = c.trend === 'up' ? '上升' : (c.trend === 'down' ? '下降' : '持平');
+                const pct = Math.min(100, (c.score / (c.key === 'debq_emotional' || c.key === 'debq_external' || c.key === 'debq_restrained' ? 5 :
+                                                c.key === 'gad7' ? 21 : c.key === 'phq9' ? 27 : c.key === 'psqi' ? 21 :
+                                                c.key === 'pss14' ? 56 : c.key === 'gsrs' ? 105 : c.key === 'vsi' ? 105 :
+                                                c.key === 'whoqol' ? 130 : c.key === 'bmi' ? 40 : 3000)) * 100);
+                return '<div class="scale-card" style="border-left-color:'+levelColor+'">' +
+                    '<div class="s-label">' + c.label + '</div>' +
+                    '<div class="s-score" style="color:'+levelColor+'">' + c.score + '</div>' +
+                    '<div class="s-level"><span class="badge" style="background:'+levelColor+'">' + c.level + '</span></div>' +
+                    '<div class="s-trend" title="' + trendTitle + '" style="color:'+levelColor+'">' + trendIcon + '</div>' +
+                    '<div class="s-progress"><div class="s-progress-bar" style="width:'+Math.min(100, pct)+'%;background:'+levelColor+'"></div></div>' +
+                    '</div>';
+            }).join('');
+        });
+}
+
+function loadStudentResponses() {
+    fetch('/api/student/' + studentId + '/responses')
+        .then(r => r.json())
+        .then(data => {
+            if (!data || data.length === 0) {
+                document.getElementById('responsesContent').innerHTML = '<p>暂无答题记录</p>';
+                return;
+            }
+            // Populate submission selector
+            const sel = document.getElementById('responseSelector');
+            data.forEach((s, i) => {
+                sel.innerHTML += '<option value="' + i + '">第' + (i+1) + '次提交 (' + (s.submitted_at||'').slice(0,16) + ')</option>';
+            });
+            sel.addEventListener('change', function() {
+                renderResponses(data[parseInt(this.value)]);
+            });
+            renderResponses(data[0]);
+        });
+}
+
+function renderResponses(submission) {
+    if (!submission || !submission.responses) {
+        document.getElementById('responsesContent').innerHTML = '<p>无答题数据</p>';
+        return;
+    }
+    const responses = submission.responses;
+    const analysis = submission.analysis || {};
+    const scalesData = analysis.scales || {};
+
+    let html = '<div class="response-total">共 ' + Object.keys(responses).length + ' 道题目</div>';
+
+    // Build scale sections dynamically from responses
+    const scaleGroups = {
+        '基本信息': { questions: [], key: null },
+        'DEBQ量表情绪性饮食': { questions: [], key: 'debq_emotional' },
+        'DEBQ量表外部性饮食': { questions: [], key: 'debq_external' },
+        'DEBQ量表限制性饮食': { questions: [], key: 'debq_restrained' },
+        'GAD-7广泛性焦虑量表': { questions: [], key: 'gad7' },
+        'PHQ-9抑郁量表': { questions: [], key: 'phq9' },
+        'PSQI匹兹堡睡眠质量指数量表': { questions: [], key: 'psqi' },
+        'PSS-14知觉压力量表': { questions: [], key: 'pss14' },
+        'GSRS胃肠道症状评定量表': { questions: [], key: 'gsrs' },
+        'IPAQ国际体力活动量表': { questions: [], key: 'ipaq' },
+        'VSI内脏敏感性指数': { questions: [], key: 'vsi' },
+        'WHOQOL-BREF生存质量量表': { questions: [], key: 'whoqol' },
+        '饮食频率': { questions: [], key: null },
+        '食物份量': { questions: [], key: null }
+    };
+
+    // Define question patterns for each group
+    const groupPatterns = {
+        '基本信息': ['姓名','性别','学工号','年级','学院','邮箱','身高','体重','饮食习惯','饮酒史','脂肪肝','生活环境'],
+        'DEBQ量表情绪性饮食': ['烦躁','无事','沮丧','孤独','失望','生气','不愉快','焦虑','不顺利','害怕','失望','低落','无聊'],
+        'DEBQ量表外部性饮食': ['味道','香味','诱人','闻到','面包店','小吃','别人在','抵制','忍不住','准备餐'],
+        'DEBQ量表限制性饮食': ['体重增加','故意','拒绝','严格','刻意','过多','不增重','两餐','晚上','考虑体重'],
+        'GAD-7广泛性焦虑量表': ['不安、焦虑','无法控制','过度担忧','放松','坐立不安','急躁','害怕'],
+        'PHQ-9抑郁量表': ['提不起劲','低落','入睡困难','疲倦','食欲','很糟','专注','变慢','伤害'],
+        'PSQI匹兹堡睡眠质量指数量表': ['睡眠','上床','起床','入睡','醒','打鼾','咳嗽','上厕所','呼吸','冷','热','噩梦','疼痛','药物','困倦','效率'],
+        'PSS-14知觉压力量表': ['在过去一个月'],
+        'GSRS胃肠道症状评定量表': ['烧心','反酸','胃疼','腹胀','打嗝','恶心','呕吐','腹泻','便','胃肠'],
+        'IPAQ国际体力活动量表': ['剧烈','适度','步行','坐着'],
+        'VSI内脏敏感性指数': ['胃胀','肠胃','腹部','消化','内脏'],
+        'WHOQOL-BREF生存质量量表': ['生存质量','健康','疼痛','医疗','精力','行动','睡眠','能力','工作','人际关系','家人','朋友','居住','卫生服务','交通','乐趣','意义','注意力','外形','消极','安全','钱','信息','休闲','家庭','食欲','总分']
+    };
+
+    // Classify questions into groups
+    const unmatched = [];
+    for (const [q, a] of Object.entries(responses)) {
+        let matched = false;
+        for (const [groupName, patterns] of Object.entries(groupPatterns)) {
+            if (patterns.some(p => q.includes(p))) {
+                scaleGroups[groupName].questions.push({q, a});
+                matched = true;
+                break;
+            }
+        }
+        if (!matched) {
+            unmatched.push({q, a});
+        }
+    }
+
+    // Helper to determine answer color
+    function getAnswerColor(q, a) {
+        const answer = String(a).trim();
+        const unhealthy = ['经常','总是','几乎每天','符合','有点符合','非常符合','重度'];
+        const moderate = ['有时','偶尔','有点不符','中立'];
+        const healthy = ['从不','很少','没有','没有或极少 ','没有或极少','无症状','否','非常不符','不符','根本不妨碍','根本不需要','完全有精力','极有','极能','完全过得去','没有消极感受','极安全','完全够用','完全齐备','完全有机会','极好','很好','很满意'];
+        if (unhealthy.some(u => answer.includes(u))) return 'qa-danger';
+        if (moderate.some(m => answer.includes(m))) return 'qa-warn';
+        return 'qa-safe';
+    }
+
+    // Get interpretation for a scale
+    function getInterpretation(scaleKey) {
+        if (!scaleKey || !scalesData[scaleKey]) return null;
+        return scalesData[scaleKey].interpretation || null;
+    }
+
+    // Render each group as collapsible section
+    for (const [groupName, group] of Object.entries(scaleGroups)) {
+        if (group.questions.length === 0) continue;
+        const interpret = getInterpretation(group.key);
+        let rows = group.questions.map((item, idx) => {
+            const colorClass = getAnswerColor(item.q, item.a);
+            return '<tr><td class="text-small" style="width:40px;color:#999">' + (idx+1) + '</td>' +
+                '<td>' + item.q + '</td>' +
+                '<td class="qa-answer ' + colorClass + '">' + item.a + '</td></tr>';
+        }).join('');
+
+        let interpretHtml = '';
+        if (interpret) {
+            interpretHtml = '<div style="padding:10px 16px;background:#f0f8f0;border-top:1px solid #e0e0e0">' +
+                '<strong>分析解读:</strong> ' + interpret.replace(/\n/g, '<br>') + '</div>';
+        }
+
+        html += '<div class="scale-section">' +
+            '<div class="scale-section-header" onclick="const b=this.nextElementSibling;b.style.display=b.style.display===\'none\'?\'table\':\'none\'">' +
+            '<span>' + groupName + ' (' + group.questions.length + '题)</span>' +
+            '<span>&#9660;</span></div>' +
+            '<table class="table" style="margin:0"><tbody>' + rows + '</tbody></table>' +
+            interpretHtml +
+            '</div>';
+    }
+
+    // Unmatched questions
+    if (unmatched.length > 0) {
+        html += '<div class="scale-section">' +
+            '<div class="scale-section-header" onclick="const b=this.nextElementSibling;b.style.display=b.style.display===\'none\'?\'table\':\'none\'">' +
+            '<span>其他题目 (' + unmatched.length + '题)</span><span>&#9660;</span></div>' +
+            '<table class="table"><tbody>' +
+            unmatched.map((item, idx) =>
+                '<tr><td>' + item.q + '</td><td class="qa-answer">' + item.a + '</td></tr>'
+            ).join('') +
+            '</tbody></table></div>';
+    }
+
+    document.getElementById('responsesContent').innerHTML = html;
+}
+
+function expandAllResponses() {
+    document.querySelectorAll('.scale-section-body, .scale-section table').forEach(el => el.style.display = 'table');
+}
+
+function collapseAllResponses() {
+    document.querySelectorAll('#tab-responses .scale-section table').forEach(el => el.style.display = 'none');
+}
+
+function loadStudentDiet() {
+    const df = document.getElementById('dietDateFromS')?.value || '';
+    const dt = document.getElementById('dietDateToS')?.value || '';
+    let url = '/api/student/' + studentId + '/diet';
+    const params = [];
+    if (df) params.push('date_from=' + df);
+    if (dt) params.push('date_to=' + dt);
+    if (params.length) url += '?' + params.join('&');
+
+    fetch(url).then(r => r.json()).then(data => {
+        const content = document.getElementById('studentDietContent');
+        if (!data || data.length === 0) {
+            content.innerHTML = '<p class="text-muted">暂无饮食记录</p>';
+            return;
+        }
+        content.innerHTML = '<div class="timeline">' +
+            data.map(d =>
+                '<div class="timeline-item">' +
+                '<div class="timeline-date">' + (d.record_date || d.submitted_at.slice(0,10)) + '</div>' +
+                '<div class="timeline-content">' +
+                '<span class="badge" style="background:#3498db;margin-bottom:8px;display:inline-block">餐数: ' + (d.meal_count||0) + '</span>' +
+                '<p><strong>饮食描述:</strong> ' + (d.diet_description || '无') + '</p>' +
+                '<div class="timeline-advice"><strong>营养建议:</strong><br>' + (d.dietary_advice || '无').replace(/\n/g, '<br>') + '</div>' +
+                '</div></div>'
+            ).join('') +
+            '</div>';
+    });
+}
+
+let trendCharts = {};
+
+function loadStudentExercise() {
+    fetch('/api/student/' + studentId + '/exercise')
+        .then(r => r.json()).then(data => {
+            const content = document.getElementById('studentExerciseContent');
+            const rows = data.rows || [];
+            if (rows.length === 0) {
+                content.innerHTML = '<p class="text-muted">暂无运动记录</p>';
+                return;
+            }
+            content.innerHTML = '<table class="data-table"><thead><tr><th>提交时间</th><th>步行天数</th><th>步行分钟/天</th><th>久坐小时/天</th><th>运动详情</th></tr></thead><tbody>' +
+                rows.map(r => {
+                    const exDetail = r.exercises && r.exercises.length > 0
+                        ? r.exercises.map(e => `${e.name}: ${e.times_per_week}次×${e.duration_hours}h`).join('; ')
+                        : '无';
+                    return `<tr>
+                        <td>${r.submitted_at}</td>
+                        <td>${r.walk_days}</td>
+                        <td>${r.walk_minutes}</td>
+                        <td>${r.sedentary_hours}</td>
+                        <td style="font-size:12px;">${exDetail}</td>
+                    </tr>`;
+                }).join('') +
+                '</tbody></table>';
+        });
+}
+
+function loadStudentTrends() {
+    fetch('/api/student/' + studentId + '/trends')
+        .then(r => r.json())
+        .then(data => {
+            const scaleTrends = data.scale_trends || [];
+            if (scaleTrends.length < 2) {
+                document.querySelector('#tab-trends .card-body').innerHTML = '<p class="text-muted">需要至少2次提交才能显示趋势</p>';
+                return;
+            }
+            const labels = scaleTrends.map(d => d.date);
+            function createTrendChart(id, label, dataKey, color, inverted) {
+                const vals = scaleTrends.map(d => d[dataKey]);
+                if (vals.every(v => v === null)) return;
+                const ctx = document.getElementById(id);
+                if (!ctx) return;
+                if (trendCharts[id]) trendCharts[id].destroy();
+                trendCharts[id] = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: label,
+                            data: vals,
+                            borderColor: color,
+                            backgroundColor: color + '33',
+                            fill: true,
+                            tension: 0.3,
+                            pointRadius: 6,
+                            pointHoverRadius: 8
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            y: { beginAtZero: true }
+                        }
+                    }
+                });
+            }
+
+            createTrendChart('trendDebqE', 'DEBQ情绪性饮食', 'DEBQ-情绪性饮食', '#3498db');
+            createTrendChart('trendDebqEx', 'DEBQ外部性饮食', 'DEBQ-外部性饮食', '#2ecc71');
+            createTrendChart('trendDebqR', 'DEBQ限制性饮食', 'DEBQ-限制性饮食', '#f39c12');
+            createTrendChart('trendGad7', 'GAD-7焦虑', 'GAD-7', '#e74c3c');
+            createTrendChart('trendPhq9', 'PHQ-9抑郁', 'PHQ-9', '#9b59b6');
+            createTrendChart('trendPsqi', 'PSQI睡眠', 'PSQI', '#1abc9c');
+            createTrendChart('trendPss14', 'PSS-14压力', 'PSS-14', '#e67e22');
+            createTrendChart('trendGsrs', 'GSRS胃肠道', 'GSRS', '#34495e');
+            createTrendChart('trendIpaq', 'IPAQ体力活动', 'IPAQ', '#16a085');
+            createTrendChart('trendVsi', 'VSI内脏焦虑', 'VSI', '#c0392b');
+            createTrendChart('trendWhoqol', 'WHOQOL生活质量', 'WHOQOL', '#2980b9');
+            createTrendChart('trendBmi', 'BMI', 'BMI', '#8e44ad');
+
+            // Diet trend
+            const dietTrend = data.diet_trend || [];
+            if (dietTrend.length > 0) {
+                const dCtx = document.getElementById('trendDiet');
+                if (dCtx) {
+                    new Chart(dCtx, {
+                        type: 'bar',
+                        data: {
+                            labels: dietTrend.map(d => d.date),
+                            datasets: [{
+                                label: '饮食记录数',
+                                data: dietTrend.map(d => d.count),
+                                backgroundColor: '#2ecc71'
+                            }]
+                        },
+                        options: { responsive: true, plugins: { legend: { display: false } } }
+                    });
+                }
+            }
+        });
+}
+
+function loadStudentRaw() {
+    fetch('/api/student/' + studentId + '/raw')
+        .then(r => r.json())
+        .then(data => {
+            if (!data || data.length === 0) {
+                document.getElementById('rawDataContent').innerHTML = '<p>暂无原始数据</p>';
+                return;
+            }
+            let html = '<div class="raw-selector" style="margin-bottom:16px">';
+            data.forEach((d, i) => {
+                html += '<button class="btn-sm ' + (i===0?'active':'') + '" onclick="showRawSub('+i+')">第'+(i+1)+'次提交 (' + (d.submitted_at||'').slice(0,10) + ')</button> ';
+            });
+            html += '</div>';
+            html += '<div id="rawContent">';
+            data.forEach((d, i) => {
+                html += '<div class="raw-submission" id="rawSub'+i+'" style="display:'+(i===0?'block':'none')+'">';
+                html += '<div class="scale-section"><div class="scale-section-header">raw_data</div><div class="raw-json">' + formatJson(d.raw_data) + '</div></div>';
+                html += '<div class="scale-section"><div class="scale-section-header">analysis</div><div class="raw-json">' + formatJson(d.analysis) + '</div></div>';
+                if (d.item_scores && Object.keys(d.item_scores).length > 0) {
+                    html += '<div class="scale-section"><div class="scale-section-header">item_scores</div><div class="raw-json">' + formatJson(d.item_scores) + '</div></div>';
+                }
+                html += '</div>';
+            });
+            html += '</div>';
+            document.getElementById('rawDataContent').innerHTML = html;
+        });
+}
+
+function showRawSub(idx) {
+    document.querySelectorAll('.raw-submission').forEach(el => el.style.display = 'none');
+    document.getElementById('rawSub' + idx).style.display = 'block';
+    document.querySelectorAll('.raw-selector .btn-sm').forEach((b, i) => b.classList.toggle('active', i === idx));
+}
+
+function formatJson(obj) {
+    const jsonStr = JSON.stringify(obj, null, 2);
+    return jsonStr.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        .replace(/"([^"]+)":/g, '<span class="key">"$1"</span>:')
+        .replace(/: "([^"]+)"/g, ': <span class="string">"$1"</span>')
+        .replace(/: (\d+\.?\d*)/g, ': <span class="number">$1</span>')
+        .replace(/: (true|false)/g, ': <span class="bool">$1</span>')
+        .replace(/: null/g, ': <span class="null">null</span>');
+}
+
+// Redirect expand/collapse from inline onclick
+function toggleSection(el) {
+    const next = el.nextElementSibling;
+    if (next) next.style.display = next.style.display === 'none' ? '' : 'none';
+}
+</script>
+{% endblock %}

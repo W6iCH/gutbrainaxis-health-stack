@@ -1,0 +1,235 @@
+{% extends "base.html" %}
+{% block title %}总览面板{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>总览面板</h1>
+    <p class="page-subtitle">大学生身心健康数据综合分析平台</p>
+</div>
+
+<div class="stat-cards" id="statCards">
+    <div class="stat-card">
+        <div class="stat-label">计划学生数</div>
+        <div class="stat-value" id="statPlanned">--</div>
+        <div class="stat-detail">已完成量表学生数: <span id="statSurveyStudents">--</span></div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">量表完成率</div>
+        <div class="stat-value" id="statCompletionRate">--</div>
+        <div class="stat-detail">量表总提交: <span id="statTotalSubmissions">--</span> 次</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">饮食记录数</div>
+        <div class="stat-value" id="statDietTotal">--</div>
+        <div class="stat-detail">参与学生: <span id="statDietStudents">--</span> 人</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">运动记录数</div>
+        <div class="stat-value" id="statExerciseTotal">--</div>
+        <div class="stat-detail">参与学生: <span id="statExerciseStudents">--</span> 人</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">数据日期范围</div>
+        <div class="stat-value" id="statDateRange">--</div>
+        <div class="stat-detail" id="statDateDetail"></div>
+    </div>
+</div>
+
+<div class="grid-2">
+    <div class="card">
+        <div class="card-header">
+            <h3>量表提交分布</h3>
+        </div>
+        <div class="card-body">
+            <canvas id="submissionChart" height="250"></canvas>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-header">
+            <h3>十大量表均分雷达图</h3>
+        </div>
+        <div class="card-body">
+            <canvas id="radarChart" height="250"></canvas>
+        </div>
+    </div>
+</div>
+
+<div class="grid-2">
+    <div class="card">
+        <div class="card-header">
+            <h3>最近活动</h3>
+        </div>
+        <div class="card-body">
+            <div class="activity-feed" id="activityFeed">
+                <div class="loading-spinner">加载中...</div>
+            </div>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-header">
+            <h3>提交不足学生警告</h3>
+            <span class="badge badge-warning" id="warningCount">0</span>
+        </div>
+        <div class="card-body">
+            <div class="warning-list" id="warningList">
+                <div class="loading-spinner">加载中...</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Load dashboard data
+    fetch('/api/dashboard/summary')
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('statPlanned').textContent = data.total_planned || 248;
+            document.getElementById('statSurveyStudents').textContent = data.survey_students || 0;
+            document.getElementById('statCompletionRate').textContent = (data.completion_rate || 0) + '%';
+            document.getElementById('statTotalSubmissions').textContent = data.total_submissions || 0;
+            document.getElementById('statDietTotal').textContent = data.diet_total || 0;
+            document.getElementById('statDietStudents').textContent = data.diet_students || 0;
+            document.getElementById('statExerciseTotal').textContent = data.exercise_total || 0;
+            document.getElementById('statExerciseStudents').textContent = data.exercise_students || 0;
+            const ds = (data.data_start || '--').slice(0,10);
+            const de = (data.data_end || '--').slice(0,10);
+            document.getElementById('statDateRange').textContent = ds + ' ~ ' + de;
+            document.getElementById('statDateDetail').textContent = '共采集 ' + (data.total_submissions + data.diet_total) + ' 条记录';
+
+            // Submission distribution chart
+            const dist = data.submission_distribution || {};
+            const labels = ['1次', '2次', '3次', '4次', '5+次'];
+            const vals = [];
+            for (let i = 1; i <= 4; i++) {
+                vals.push(Object.values(dist).filter(v => v === i).length);
+            }
+            // Actually let's compute better
+            const counts = Object.values(dist);
+            const distArr = [0,0,0,0,0];
+            counts.forEach(c => {
+                if (c >= 5) distArr[4]++;
+                else if (c >= 1) distArr[c-1]++;
+            });
+
+            new Chart(document.getElementById('submissionChart'), {
+                type: 'bar',
+                data: {
+                    labels: ['1次', '2次', '3次', '4次', '5次及以上'],
+                    datasets: [{
+                        label: '学生人数',
+                        data: distArr,
+                        backgroundColor: ['#3498db','#2ecc71','#f39c12','#e74c3c','#9b59b6']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true, ticks: { stepSize: 1 } }
+                    }
+                }
+            });
+        });
+
+    // Load radar chart
+    fetch('/api/stats/overview')
+        .then(r => r.json())
+        .then(data => {
+            const scales = data.scales || {};
+            // Normalize scores to 0-100 for radar
+            const scaleMap = {
+                'debq_emotional': { label: 'DEBQ情绪', raw: 0, max: 5, invert: false },
+                'debq_external': { label: 'DEBQ外部', raw: 0, max: 5, invert: false },
+                'debq_restrained': { label: 'DEBQ限制', raw: 0, max: 5, invert: false },
+                'gad7': { label: 'GAD7', raw: 0, max: 21, invert: true },
+                'phq9': { label: 'PHQ9', raw: 0, max: 27, invert: true },
+                'psqi': { label: 'PSQI', raw: 0, max: 21, invert: true },
+                'pss14': { label: 'PSS14', raw: 0, max: 56, invert: true },
+                'gsrs': { label: 'GSRS', raw: 0, max: 105, invert: true },
+                'whoqol': { label: 'WHOQOL', raw: 0, max: 130, invert: false },
+                'vsi': { label: 'VSI', raw: 0, max: 105, invert: true }
+            };
+
+            for (const [k, v] of Object.entries(scales)) {
+                if (scaleMap[k]) {
+                    scaleMap[k].raw = v.mean || 0;
+                }
+            }
+            // Also try ipaq
+            if (scales['ipaq']) {
+                scaleMap['ipaq'] = { label: 'IPAQ', raw: scales['ipaq'].mean || 0, max: 3000, invert: false };
+            }
+
+            // Normalize: higher = better, so invert when needed
+            const labels = [];
+            const normValues = [];
+            for (const [k, v] of Object.entries(scaleMap)) {
+                labels.push(v.label);
+                let pct = (v.raw / v.max) * 100;
+                if (v.invert) pct = 100 - pct;
+                normValues.push(Math.min(100, Math.max(0, pct)));
+            }
+
+            new Chart(document.getElementById('radarChart'), {
+                type: 'radar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '量表健康指数 (越高越好)',
+                        data: normValues,
+                        backgroundColor: 'rgba(52,152,219,0.2)',
+                        borderColor: '#3498db',
+                        pointBackgroundColor: '#3498db',
+                        pointRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        r: { beginAtZero: true, max: 100, ticks: { stepSize: 20 } }
+                    }
+                }
+            });
+        });
+
+    // Load activity feed
+    fetch('/api/dashboard/activity')
+        .then(r => r.json())
+        .then(data => {
+            const feed = document.getElementById('activityFeed');
+            if (!data || data.length === 0) {
+                feed.innerHTML = '<p class="text-muted">暂无活动记录</p>';
+                return;
+            }
+            feed.innerHTML = data.map(item => {
+                const cls = item[3] === '量表提交' ? 'activity-survey' : 'activity-diet';
+                const icon = item[3] === '量表提交' ? '量表' : '饮食';
+                return '<div class="activity-item ' + cls + '">' +
+                    '<span class="activity-type">' + icon + '</span>' +
+                    '<span class="activity-name">' + (item[1] || item[0]) + '</span>' +
+                    '<span class="activity-action">' + item[3] + '</span>' +
+                    '<span class="activity-time">' + (item[2]||'').slice(0,16) + '</span>' +
+                    '</div>';
+            }).join('');
+        });
+
+    // Load warnings
+    fetch('/api/dashboard/warnings')
+        .then(r => r.json())
+        .then(data => {
+            const list = document.getElementById('warningList');
+            const cnt = document.getElementById('warningCount');
+            if (!data || data.length === 0) {
+                list.innerHTML = '<p class="text-muted">所有学生提交次数均达标</p>';
+                cnt.textContent = '0';
+                return;
+            }
+            cnt.textContent = data.length;
+            list.innerHTML = '<table class="table"><thead><tr><th>学号</th><th>姓名</th><th>已提交</th><th>操作</th></tr></thead><tbody>' +
+                data.map(w => '<tr><td><a href="/student/' + w.student_id + '">' + w.student_id + '</a></td><td>' + w.name + '</td><td>' + w.count + '次</td><td><a href="/student/' + w.student_id + '" class="btn-sm">查看</a></td></tr>').join('') +
+                '</tbody></table>';
+        });
+});
+</script>
+{% endblock %}

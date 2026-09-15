@@ -1,0 +1,14 @@
+# ────────────────────────────────────────────────────────────────────────────
+#  问卷同步定时器 — 每小时整点触发
+# ────────────────────────────────────────────────────────────────────────────
+[Unit]
+Description=Research Survey Sync Timer (every hour)
+Documentation=file://__APP_BASE__/docs/02_问卷反馈系统.md
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

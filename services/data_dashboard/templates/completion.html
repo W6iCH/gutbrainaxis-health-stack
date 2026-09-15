@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}完成情况统计{% endblock %}
+{% block extra_head %}
+<style>
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin: 0 2px; vertical-align: middle; }
+.dot.green { background: #27ae60; }
+.dot.red { background: #e74c3c; }
+.dot.empty { background: transparent; border: 2px solid #bbb; box-sizing: border-box; }
+.dot-bar-seg { width: 18px; height: 8px; border-radius: 2px; display: inline-block; }
+.dot-bar { display: inline-flex; align-items: center; gap: 1px; margin-right: 4px; }
+.dot-count { font-size: 11px; color: #666; margin-left: 4px; }
+.dot-row { display: inline-flex; align-items: center; gap: 2px; margin-right: 6px; }
+.dot-label { font-size: 11px; color: #666; }
+.scoring-rules .rule-row { font-size: 13px; line-height: 2; padding: 2px 0; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>完成情况统计</h1>
+    <p class="page-subtitle">目标人群任务完成进度与得分统计 | 更新时间：{{ update_time }} | 版本 v{{ version }}</p>
+</div>
+
+<div class="stat-cards">
+    <div class="stat-card"><div class="stat-label">目标总人数</div><div class="stat-value">{{ summary.total }}</div><div class="stat-detail">平均得分: {{ summary.avg_score }}</div></div>
+    <div class="stat-card stat-card-green"><div class="stat-label">量表完成</div><div class="stat-value">{{ summary.scale_distribution.green }}/{{ summary.total }}</div><div class="stat-detail"><span class="dot green"></span>完成 <span class="dot yellow"></span>进行中 <span class="dot red"></span>未达标</div></div>
+    <div class="stat-card stat-card-green"><div class="stat-label">运动完成</div><div class="stat-value">{{ summary.exercise_distribution.green }}/{{ summary.total }}</div><div class="stat-detail"><span class="dot green"></span>完成 <span class="dot yellow"></span>进行中 <span class="dot red"></span>未达标</div></div>
+    <div class="stat-card stat-card-green"><div class="stat-label">饮食完成</div><div class="stat-value">{{ summary.diet_distribution.green }}/{{ summary.total }}</div><div class="stat-detail"><span class="dot green"></span>完成 <span class="dot yellow"></span>进行中 <span class="dot red"></span>未达标</div></div>
+</div>
+
+<div class="grid-3" style="margin-bottom: 20px;">
+    <div class="card"><div class="card-header"><h3>量表分布</h3></div><div class="card-body"><canvas id="scaleDistChart" height="180"></canvas></div></div>
+    <div class="card"><div class="card-header"><h3>运动分布</h3></div><div class="card-body"><canvas id="exDistChart" height="180"></canvas></div></div>
+    <div class="card"><div class="card-header"><h3>饮食分布</h3></div><div class="card-body"><canvas id="dietDistChart" height="180"></canvas></div></div>
+</div>
+
+<div class="legend-bar">
+    <span class="legend-item"><span class="dot green"></span> 已完成（绿）</span>
+    <span class="legend-item"><span class="dot red"></span> 未达标（红）</span>
+    <span class="legend-item"><span class="dot empty"></span> 未到期（空心）</span>
+    <span class="legend-item" style="margin-left:16px;">量表: 3次 | 运动: 3次 | 饮食: 7.6-7.29</span>
+</div>
+
+<div class="card" style="margin-bottom: 20px;">
+    <div class="card-header"><h3>赋分标准</h3></div>
+    <div class="card-body scoring-rules">
+        <div class="rule-row"><strong>量表问卷（10分）：</strong>7.6周一、7.15周三、7.27周一 共3次，每次3分，3次全部完成10分</div>
+        <div class="rule-row"><strong>运动打卡（3分）：</strong>7.13周一、7.20周一、7.27周一 打卡3次，每次1分，共3分</div>
+        <div class="rule-row"><strong>饮食打卡（22分）：</strong>7.6至7.29每天饮食打卡，全部完成22分，少一次扣1分</div>
+        <div class="rule-row" style="color:#888;">统计口径：量表/运动在规定日期&plusmn;3天内完成计为完成；第一次量表延长至7.13</div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h3>目标人群完成情况明细</h3>
+        <div class="header-actions">
+            <input type="text" id="searchInput" placeholder="搜索学号或姓名..." oninput="filterTable()" style="padding:6px 12px;border:1px solid #ddd;border-radius:4px;width:200px;">
+            <button onclick="exportCSV()" class="btn btn-sm">导出CSV</button>
+        </div>
+    </div>
+    <div class="card-body" style="overflow-x: auto;">
+        <table class="data-table" id="completionTable">
+            <thead>
+                <tr>
+                    <th style="width:36px">#</th>
+                    <th>学号</th>
+                    <th>姓名</th>
+                    <th style="text-align:center">量表提交完成情况</th>
+                    <th style="text-align:center">运动记录完成情况</th>
+                    <th style="text-align:center">饮食记录完成情况</th>
+                    <th style="text-align:center">量表<br>(/10)</th>
+                    <th style="text-align:center">运动<br>(/3)</th>
+                    <th style="text-align:center">饮食<br>(/22)</th>
+                    <th style="text-align:center">总分<br>(/35)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in rows %}
+                <tr data-search="{{ r.student_id }} {{ r.name }}" class="completion-row">
+                    <td style="text-align:center;color:#999;">{{ loop.index }}</td>
+                    <td>{{ r.student_id }}</td>
+                    <td><strong>{{ r.name }}</strong></td>
+                    <td style="text-align:center">
+                        {% for d in r.scale_dots %}
+                        <span class="dot {{ d }}"></span>
+                        {% endfor %}
+                        <span class="dot-label">{{ r.scale_completed }}</span>
+                    </td>
+                    <td style="text-align:center">
+                        {% for d in r.exercise_dots %}
+                        <span class="dot {{ d }}"></span>
+                        {% endfor %}
+                        <span class="dot-label">{{ r.exercise_completed }}</span>
+                    </td>
+                    <td style="text-align:center;padding:4px 6px;">
+                        <div style="display:inline-block;">
+                            <div style="display:flex;gap:1px;margin-bottom:1px;">
+                            {% for seg in r.diet_segments %}
+                            <span style="display:inline-block;width:14px;height:16px;border-radius:2px;background:{{ seg }}" title="{{ diet_dates[loop.index0] }}"></span>
+                            {% endfor %}
+                            </div>
+                            <div style="display:flex;justify-content:space-between;">
+                                <span style="font-size:9px;color:#888;">7/6</span>
+                                <span style="font-size:9px;color:#888;">7/13</span>
+                                <span style="font-size:9px;color:#888;">7/20</span>
+                                <span style="font-size:9px;color:#888;">7/27</span>
+                            </div>
+                        </div>
+                        <span class="dot-count" style="display:block;margin-top:2px;">{{ r.diet_completed }}</span>
+                    </td>
+                    <td style="text-align:center;font-weight:bold;">{{ r.scale_score }}</td>
+                    <td style="text-align:center;font-weight:bold;">{{ r.exercise_score }}</td>
+                    <td style="text-align:center;font-weight:bold;">{{ r.diet_score }}</td>
+                    <td style="text-align:center;font-weight:bold;font-size:15px;color:{{ '#27ae60' if r.total_score >= 30 else ('#f39c12' if r.total_score >= 20 else '#e74c3c') }}">{{ r.total_score }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var sd = {{ summary | tojson | safe }};
+    new Chart(document.getElementById('scaleDistChart'), {
+        type:'doughnut',
+        data:{labels:['已完成','进行中','未达标'],datasets:[{data:[sd.scale_distribution.green,sd.scale_distribution.yellow,sd.scale_distribution.red],backgroundColor:['#27ae60','#f39c12','#e74c3c']}]},
+        options:{plugins:{legend:{position:'bottom'}}}
+    });
+    new Chart(document.getElementById('exDistChart'), {
+        type:'doughnut',
+        data:{labels:['已完成','进行中','未达标'],datasets:[{data:[sd.exercise_distribution.green,sd.exercise_distribution.yellow,sd.exercise_distribution.red],backgroundColor:['#27ae60','#f39c12','#e74c3c']}]},
+        options:{plugins:{legend:{position:'bottom'}}}
+    });
+    new Chart(document.getElementById('dietDistChart'), {
+        type:'doughnut',
+        data:{labels:['已完成','进行中','未达标'],datasets:[{data:[sd.diet_distribution.green,sd.diet_distribution.yellow,sd.diet_distribution.red],backgroundColor:['#27ae60','#f39c12','#e74c3c']}]},
+        options:{plugins:{legend:{position:'bottom'}}}
+    });
+});
+
+function filterTable() {
+    var q = document.getElementById('searchInput').value.toLowerCase();
+    var rows = document.querySelectorAll('.completion-row');
+    rows.forEach(function(r) {
+        r.style.display = q && !r.getAttribute('data-search').toLowerCase().includes(q) ? 'none' : '';
+    });
+}
+
+function exportCSV() {
+    var visible = document.querySelectorAll('.completion-row:not([style*="display: none"])');
+    var csv = '\uFEFF学号,姓名,量表完成,量表得分,运动完成,运动得分,饮食完成,饮食得分,总得分\n';
+    visible.forEach(function(r) {
+        var cells = r.querySelectorAll('td');
+        csv += cells[1].textContent + ',' + cells[2].textContent + ',' +
+               cells[3].querySelector('.dot-label').textContent + ',' + cells[6].textContent + ',' +
+               cells[4].querySelector('.dot-label').textContent + ',' + cells[7].textContent + ',' +
+               cells[5].querySelector('.dot-count').textContent + ',' + cells[8].textContent + ',' +
+               cells[9].textContent + '\n';
+    });
+    var blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'completion_stats.csv'; a.click();
+}
+</script>
+{% endblock %}

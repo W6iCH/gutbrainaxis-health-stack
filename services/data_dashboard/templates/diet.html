@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% block title %}饮食数据中心{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>饮食数据中心</h1>
+    <p class="page-subtitle">学生日常饮食记录管理与分析</p>
+</div>
+
+<div class="stat-cards" id="dietStatCards">
+    <div class="stat-card">
+        <div class="stat-label">总记录数</div>
+        <div class="stat-value" id="dStatTotal">--</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">参与学生</div>
+        <div class="stat-value" id="dStatStudents">--</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">日均提交</div>
+        <div class="stat-value" id="dStatAvg">--</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">数据范围</div>
+        <div class="stat-value stat-sm" id="dStatRange">--</div>
+    </div>
+</div>
+
+<div class="grid-2">
+    <div class="card">
+        <div class="card-header"><h3>每日提交趋势</h3></div>
+        <div class="card-body"><canvas id="dietTrendChart" height="200"></canvas></div>
+    </div>
+    <div class="card">
+        <div class="card-header"><h3>学生提交分布</h3></div>
+        <div class="card-body"><canvas id="dietStudentChart" height="200"></canvas></div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h3>饮食记录明细</h3>
+        <div class="card-actions">
+            <input type="text" id="dietKeyword" class="search-input" placeholder="搜索内容..." style="width:150px">
+            <input type="text" id="dietDateFrom" class="search-input" placeholder="开始日期" style="width:120px">
+            <input type="text" id="dietDateTo" class="search-input" placeholder="结束日期" style="width:120px">
+            <input type="text" id="dietSid" class="search-input" placeholder="学号" style="width:120px">
+            <button class="btn" onclick="loadDietList(1)">查询</button>
+        </div>
+    </div>
+    <div class="card-body" style="overflow-x:auto">
+        <table class="table table-sticky" id="dietTable">
+            <thead><tr><th>学号</th><th>姓名</th><th>提交时间</th><th>记录日期</th><th>饮食描述</th><th>餐数</th><th>营养建议</th></tr></thead>
+            <tbody id="dietTableBody"></tbody>
+        </table>
+        <div id="dietPagination" class="pagination"></div>
+        <div class="loading-spinner" id="dietLoading">加载中...</div>
+    </div>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    fetch('/api/diet/summary').then(r=>r.json()).then(d => {
+        document.getElementById('dStatTotal').textContent = d.total || 0;
+        document.getElementById('dStatStudents').textContent = d.students || 0;
+        document.getElementById('dStatAvg').textContent = d.avg_meals || 0;
+        document.getElementById('dStatRange').textContent = (d.date_start||'').slice(0,10) + ' ~ ' + (d.date_end||'').slice(0,10);
+    });
+
+    fetch('/api/diet/trend').then(r=>r.json()).then(data => {
+        new Chart(document.getElementById('dietTrendChart'), {
+            type: 'line',
+            data: {
+                labels: data.map(d=>d.date),
+                datasets: [{
+                    label: '每日记录数',
+                    data: data.map(d=>d.count),
+                    borderColor: '#3498db',
+                    backgroundColor: 'rgba(52,152,219,0.1)',
+                    fill: true,
+                    tension: 0.3
+                }]
+            },
+            options: { responsive: true, plugins: { legend: { display: false } } }
+        });
+    });
+
+    fetch('/api/diet/student_distribution').then(r=>r.json()).then(data => {
+        const top = data.slice(0, 20);
+        new Chart(document.getElementById('dietStudentChart'), {
+            type: 'bar',
+            data: {
+                labels: top.map(d=>d.name || d.student_id),
+                datasets: [{
+                    label: '提交次数',
+                    data: top.map(d=>d.count),
+                    backgroundColor: '#2ecc71'
+                }]
+            },
+            options: {
+                responsive: true,
+                indexAxis: 'y',
+                plugins: { legend: { display: false } }
+            }
+        });
+    });
+
+    loadDietList(1);
+});
+
+function loadDietList(page) {
+    const kw = document.getElementById('dietKeyword').value;
+    const df = document.getElementById('dietDateFrom').value;
+    const dt = document.getElementById('dietDateTo').value;
+    const sid = document.getElementById('dietSid').value;
+    const params = new URLSearchParams({page});
+    if (kw) params.set('keyword', kw);
+    if (df) params.set('date_from', df);
+    if (dt) params.set('date_to', dt);
+    if (sid) params.set('student_id', sid);
+
+    document.getElementById('dietLoading').style.display = 'block';
+    fetch('/api/diet/list?' + params).then(r=>r.json()).then(data => {
+        document.getElementById('dietLoading').style.display = 'none';
+        const rows = data.rows || [];
+        const body = document.getElementById('dietTableBody');
+        body.innerHTML = rows.map(r =>
+            '<tr onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display===\'none\'?\'table-row\':\'none\'">' +
+            '<td><a href="/student/' + r.student_id + '">' + r.student_id + '</a></td>' +
+            '<td>' + r.name + '</td>' +
+            '<td class="text-small">' + (r.submitted_at||'').slice(0,16) + '</td>' +
+            '<td>' + (r.record_date||'').slice(0,10) + '</td>' +
+            '<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (r.diet_description||'').slice(0,60) + '</td>' +
+            '<td>' + (r.meal_count||0) + '</td>' +
+            '<td class="text-small" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (r.dietary_advice||'').slice(0,40) + '</td>' +
+            '</tr>' +
+            '<tr style="display:none;background:#f8f9fa">' +
+            '<td colspan="7"><div style="padding:12px"><strong>完整饮食描述:</strong><p>' + (r.diet_description||'无') + '</p><strong>营养建议:</strong><p>' + (r.dietary_advice||'无') + '</p></div></td>' +
+            '</tr>'
+        ).join('');
+        // Pagination
+        const total = data.total || 0;
+        const pages = Math.ceil(total / (data.per_page || 50));
+        let pgHtml = '';
+        for (let i = 1; i <= pages && i <= 20; i++) {
+            pgHtml += '<button class="btn-sm ' + (i===page?'active':'') + '" onclick="loadDietList('+i+')">'+i+'</button>';
+        }
+        document.getElementById('dietPagination').innerHTML = pgHtml;
+    });
+}
+</script>
+{% endblock %}
