@@ -1,0 +1,23 @@
+# ────────────────────────────────────────────────────────────────────────────
+#  3) 饮食 Webhook   :9876
+# ────────────────────────────────────────────────────────────────────────────
+[Unit]
+Description=Research Diet Webhook Listener (:9876)
+Documentation=file://__APP_BASE__/docs/常见故障排查.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__SERVICE_USER__
+WorkingDirectory=__APP_BASE__/diet_survey
+EnvironmentFile=-__ENV_FILE__
+ExecStart=__VENV__ __APP_BASE__/diet_survey/webhook_listener.py 9876
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=research-diet-webhook
+
+[Install]
+WantedBy=multi-user.target

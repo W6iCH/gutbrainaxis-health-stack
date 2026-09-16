@@ -27,6 +27,19 @@ from port_manager import PortManager, PortConflictError
 from health_check import HealthChecker
 from audit import AuditLogger
 
+# 调度页后端（C）：app.yaml 时间项可视化查看与修改
+# 拓扑不同（仓库 vs 安装）时静默降级：页面会提示「后端不可用」而不影响其他功能。
+try:
+    import schedule_manager as sched_mgr
+except Exception:                                             # noqa: BLE001
+    sched_mgr = None
+
+# 应用配置页后端（app.yaml 全量键可视化查看与修改）
+try:
+    import appconfig_manager as appcfg_mgr
+except Exception:                                             # noqa: BLE001
+    appcfg_mgr = None
+
 # ── 基准路径 ──────────────────────────────────────────────────────────
 # 可移植：基准目录来自环境变量，默认取脚本所在目录
 BASE_DIR = Path(__file__).resolve().parent
@@ -52,6 +65,15 @@ audit_logger = AuditLogger(str(LOG_DIR))
 
 app = Flask(__name__)
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
+# ── 会话 Cookie 安全属性（E：安全必需）────────────────────────────
+# HttpOnly=禁止 JS 读取；SameSite=Lax=阻断跨站带 Cookie 的写操作；
+# Secure=仅 HTTPS 传输（由 CONSOLE_COOKIE_SECURE 或 site.public_scheme=https 控制）。
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE=os.environ.get("CONSOLE_COOKIE_SAMESITE", "Lax"),
+    SESSION_COOKIE_SECURE=(os.environ.get("CONSOLE_COOKIE_SECURE", "0") == "1"),
+    PERMANENT_SESSION_LIFETIME=3600,
+)
 
 # ── 安全：签名 Cookie / CSRF ─────────────────────────────────────────
 def _get_secret_key() -> str:
@@ -105,15 +127,35 @@ def must_change_password() -> bool:
     return MUST_CHANGE_FLAG.exists()
 
 
-# 请求上下文注入当前用户
+# 请求上下文注入当前用户 + CSRF 防护
+CSRF_EXEMPT = ("/api/login", "/api/auth", "/api/health", "/api/setup",
+               "/api/install", "/healthz", "/health")
+
+
+def _csrf_token() -> str:
+    tok = session.get("csrf")
+    if not tok:
+        tok = secrets.token_urlsafe(24)
+        session["csrf"] = tok
+    return tok
+
+
 @app.before_request
 def before_request():
     g.user = session.get("user")
     g.ip = request.remote_addr or "unknown"
     if not request.path.startswith("/api/"):
         return None
-    if request.path in ("/api/login", "/api/auth", "/api/health", "/api/setup"):
+    if request.path in ( "/api/login", "/api/auth", "/api/health", "/api/setup"):
         return None
+    # CSRF：所有写操作必须携带与会话一致的令牌（API Key 调用免验）
+    if request.method in ("POST", "PUT", "PATCH", "DELETE") \
+            and request.path not in CSRF_EXEMPT:
+        if not request.headers.get("X-API-Key"):
+            sent = request.headers.get("X-CSRF-Token") or (request.get_json(silent=True) or {}).get("_csrf")
+            if not sent or not secrets.compare_digest(str(sent), str(session.get("csrf") or "")):
+                return jsonify({"error": "CSRF 校验失败，请刷新页面重试",
+                                "code": "CSRF_FAILED"}), 403
     if not g.user:
         return jsonify({"error": "未授权", "code": "UNAUTHORIZED"}), 401
     # 强制首次登录改密：未改密前只放行改密/登出/状态查询
@@ -125,12 +167,13 @@ def before_request():
 # ── 核心 HTML ────────────────────────────────────────────────────────
 
 def render_app(title: str = "管理控制台") -> str:
-    """渲染 SPA 外壳"""
+    """渲染 SPA 外壳（注入 CSRF 令牌，供前端写操作携带）"""
     return f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="csrf-token" content="{_csrf_token()}">
 <title>{title}</title>
 <link rel="stylesheet" href="/static/app.css">
 </head>
@@ -162,14 +205,36 @@ def api_auth():
 
     data = request.get_json() or {}
     password = data.get("password", "")
+
+    # 登录失败锁定（持久化：重启不可绕过）
+    locked, left = auth_mgr.is_locked(g.ip)
+    if locked:
+        audit_logger.log("login", f"ip:{g.ip}", "failure",
+                         f"账户已锁定（剩余 {left}s）")
+        return jsonify({"error": f"登录失败次数过多，请在 {left} 秒后重试",
+                        "code": "LOCKED", "retry_after": left}), 429
+
     if auth_mgr.verify(password):
+        session.clear()
         session["authed"] = True
         session["user"] = "admin"
+        session.permanent = True
+        auth_mgr.reset_failures(g.ip)
+        _csrf_token()
         audit_logger.log("login", "admin", "success", "管理员登录")
         return jsonify({"success": True, "user": "admin",
                         "must_change_password": must_change_password()})
-    audit_logger.log("login", f"ip:{g.ip}", "failure", "口令错误")
-    return jsonify({"error": "口令错误"}), 401
+
+    now_locked, left = auth_mgr.record_failure(g.ip)
+    audit_logger.log("login", f"ip:{g.ip}", "failure",
+                     "口令错误" + (f"（触发锁定 {left}s）" if now_locked else ""))
+    if now_locked:
+        return jsonify({"error": f"失败次数过多，账户已锁定 {left} 秒",
+                        "code": "LOCKED", "retry_after": left}), 429
+    st = auth_mgr.lockout_status(g.ip)
+    return jsonify({"error": "口令错误",
+                    "remaining_attempts": max(0, st.get("threshold", 5) -
+                                              st.get("failures_recent", 0))}), 401
 
 
 @app.route("/api/setup", methods=["GET", "POST"])
@@ -208,8 +273,6 @@ def api_change_password():
     data = request.get_json() or {}
     old_pw = data.get("old_password", "")
     new_pw = data.get("new_password", "")
-    if len(new_pw) < 8:
-        return jsonify({"error": "新口令至少 8 个字符"}), 400
     ok, msg = auth_mgr.change_password(old_pw, new_pw)
     if not ok:
         audit_logger.log("password_change", g.user, "failure", msg)
@@ -262,6 +325,119 @@ def api_restore_config():
     cfg = config_mgr.restore_defaults()
     audit_logger.log("config_restore", g.user, "success", "恢复默认配置")
     return jsonify({"success": True, "data": cfg})
+
+
+# ── 调度页（C：时间项统一可视化查看与修改）─────────────────────────────
+@app.route("/api/schedule")
+def api_schedule():
+    if sched_mgr is None:
+        return jsonify({"error": "调度后端不可用（未找到 tools/appconfig.py）"}), 503
+    try:
+        return jsonify(sched_mgr.describe())
+    except Exception as e:                                    # noqa: BLE001
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/schedule/preview", methods=["POST"])
+def api_schedule_preview():
+    if not session.get("authed"):
+        return jsonify({"error": "未授权"}), 401
+    if sched_mgr is None:
+        return jsonify({"error": "调度后端不可用"}), 503
+    data = request.get_json() or {}
+    try:
+        return jsonify(sched_mgr.preview(data.get("updates", {})))
+    except Exception as e:                                    # noqa: BLE001
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/schedule", methods=["POST", "PUT"])
+def api_schedule_update():
+    if not session.get("authed"):
+        return jsonify({"error": "未授权"}), 401
+    if sched_mgr is None:
+        return jsonify({"error": "调度后端不可用"}), 503
+    data = request.get_json() or {}
+    updates = data.get("updates", {})
+    try:
+        result = sched_mgr.update(updates, apply_timers=bool(data.get("apply_timers", True)))
+    except Exception as e:                                    # noqa: BLE001
+        audit_logger.log("schedule_update", g.user, "failure", f"异常: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+    if result.get("success"):
+        changed = ", ".join(c["key"] for c in result.get("changes", []))
+        audit_logger.log("schedule_update", g.user, "success",
+                         f"修改时间项: {changed}",
+                         f"backup={result.get('backup','')}")
+    else:
+        audit_logger.log("schedule_update", g.user, "failure",
+                         str(result.get("error") or result.get("errors"))[:300])
+    return jsonify(result), (200 if result.get("success") else 400)
+
+
+# ── 应用配置页（app.yaml 全量键）───────────────────────────────────────
+@app.route("/api/appconfig")
+def api_appconfig():
+    if appcfg_mgr is None:
+        return jsonify({"error": "配置后端不可用（未找到 tools/appconfig.py）"}), 503
+    try:
+        return jsonify(appcfg_mgr.describe())
+    except Exception as e:                                    # noqa: BLE001
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/appconfig/preview", methods=["POST"])
+def api_appconfig_preview():
+    if not session.get("authed"):
+        return jsonify({"error": "未授权"}), 401
+    if appcfg_mgr is None:
+        return jsonify({"error": "配置后端不可用"}), 503
+    data = request.get_json() or {}
+    try:
+        return jsonify(appcfg_mgr.preview(data.get("updates", {})))
+    except Exception as e:                                    # noqa: BLE001
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/appconfig", methods=["POST", "PUT"])
+def api_appconfig_update():
+    if not session.get("authed"):
+        return jsonify({"error": "未授权"}), 401
+    if appcfg_mgr is None:
+        return jsonify({"error": "配置后端不可用"}), 503
+    data = request.get_json() or {}
+    try:
+        result = appcfg_mgr.update(data.get("updates", {}),
+                                   apply_env=bool(data.get("apply_env", True)),
+                                   apply_timers=bool(data.get("apply_timers", True)))
+    except Exception as e:                                    # noqa: BLE001
+        audit_logger.log("appconfig_update", g.user, "failure", f"异常: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+    if result.get("success"):
+        changed = ", ".join(c["key"] for c in result.get("changes", []))
+        audit_logger.log("appconfig_update", g.user, "success",
+                         f"修改配置: {changed}", f"backup={result.get('backup','')}")
+    else:
+        audit_logger.log("appconfig_update", g.user, "failure",
+                         str(result.get("error") or result.get("errors"))[:300])
+    return jsonify(result), (200 if result.get("success") else 400)
+
+
+@app.route("/api/appconfig/restore", methods=["POST"])
+def api_appconfig_restore():
+    if not session.get("authed"):
+        return jsonify({"error": "未授权"}), 401
+    if appcfg_mgr is None:
+        return jsonify({"error": "配置后端不可用"}), 503
+    data = request.get_json() or {}
+    try:
+        result = appcfg_mgr.restore_defaults(confirm=bool(data.get("confirm")))
+    except Exception as e:                                    # noqa: BLE001
+        return jsonify({"success": False, "error": str(e)}), 500
+    audit_logger.log("appconfig_restore", g.user,
+                     "success" if result.get("success") else "failure",
+                     f"恢复默认配置 backup={result.get('backup','')}")
+    return jsonify(result), (200 if result.get("success") else 400)
 
 # ── 服务进程路由 ─────────────────────────────────────────────────────
 @app.route("/api/processes")

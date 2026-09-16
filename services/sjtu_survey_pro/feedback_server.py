@@ -19,7 +19,9 @@ from survey_analysis import render_html_report
 from survey_database import get_conn
 from survey_sync_cron import sync as run_sync
 
-DEFAULT_PORT = 8000
+DEFAULT_PORT = int(os.environ.get("PORT_SURVEY_FEEDBACK", "8000"))
+# 兼容监听端口（可留空）：PORT_SURVEY_FEEDBACK_ALT，由 app.yaml services.survey_feedback.port_alt 渲染
+DEFAULT_PORT_ALT = int(os.environ.get("PORT_SURVEY_FEEDBACK_ALT", "0") or "0")
 TRIGGER_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "feedback_trigger.log")
 
 
@@ -237,7 +239,13 @@ font-size:13px;color:#795548;line-height:1.7;text-align:left}}
 
 
 def main():
-    ports = [int(a) for a in sys.argv[1:]] if len(sys.argv) > 1 else [DEFAULT_PORT]
+    if len(sys.argv) > 1:
+        ports = [int(a) for a in sys.argv[1:]]
+    else:
+        # 端口来自 app.yaml（services.survey_feedback.port / .port_alt）
+        ports = [DEFAULT_PORT]
+        if DEFAULT_PORT_ALT and DEFAULT_PORT_ALT != DEFAULT_PORT:
+            ports.append(DEFAULT_PORT_ALT)
 
     print("=" * 50)
     print("  Survey Feedback Server — STRICT MODE + AUTO TRIGGER")

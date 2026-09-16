@@ -33,8 +33,10 @@ from exercise_database import (
 #    配置位置：config/app.yaml → survey_platforms.exercise.token
 #             （或 /etc/research-app/secrets.env 的 WJX_EXERCISE_TOKEN）
 WJX_EXERCISE_TOKEN = os.environ.get("WJX_EXERCISE_TOKEN", "").strip()
-API_BASE_URL = ("https://wj.sjtu.edu.cn/api/v1/public/result/"
-                f"{WJX_EXERCISE_TOKEN}/json")
+# API 基础地址可配（app.yaml → survey_platforms.exercise.api_base）
+API_BASE = os.environ.get("WJX_EXERCISE_API_BASE",
+                          "https://wj.sjtu.edu.cn/api/v1/public/result").rstrip("/")
+API_BASE_URL = f"{API_BASE}/{WJX_EXERCISE_TOKEN}/json"
 API_PAGE_SIZE = int(os.environ.get("WJX_EXERCISE_PAGE_SIZE", "50"))  # 大页提升效率
 CST = timezone(timedelta(hours=8))
 
@@ -211,12 +213,32 @@ def sync(force: bool = False, dry_run: bool = False) -> dict:
     return stats
 
 
+def in_quiet_hours() -> bool:
+    """静默时段内是否跳过定时拉取（webhook 仍实时接收，不影响低延迟链路）。"""
+    try:
+        sys.path.insert(0, os.path.join(os.path.dirname(BASE_DIR), "common"))
+        from lib_schedule import load_config, is_quiet_hours
+        cfg = load_config()
+        if not cfg.get("schedule.quiet_hours_skip_sync", True):
+            return False
+        return bool(is_quiet_hours(cfg))
+    except Exception:                                       # noqa: BLE001
+        return False
+
+
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="Exercise Survey Sync Cron")
     parser.add_argument("--force", action="store_true", help="强制重新处理")
     parser.add_argument("--dry-run", action="store_true", help="只检查不写入")
     args = parser.parse_args()
+
+    # 静默时段（可配）：定时拉取跳过；webhook 不受影响，数据不丢
+    if in_quiet_hours() and not args.force:
+        log("🌙 静默时段（schedule.quiet_hours_*），跳过本次定时拉取；"
+            "窗口外自动恢复")
+        print(f"[MACHINE_PARSE] {json.dumps({'skipped': 'quiet_hours'})}")
+        return 0
 
     log("=" * 60)
     log("  Exercise Survey Sync Cron")

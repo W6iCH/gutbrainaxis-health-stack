@@ -23,7 +23,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from diet_database import get_submission_by_answer_id, get_conn
 
-DEFAULT_PORT = 8001
+DEFAULT_PORT = int(os.environ.get("PORT_DIET_FEEDBACK", "8001"))
 TRIGGER_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "feedback_trigger.log")
 # 日志目录必须存在：旧实现在 logs/ 缺失时写触发器日志会抛 FileNotFoundError
 os.makedirs(os.path.dirname(TRIGGER_LOG), exist_ok=True)

@@ -39,7 +39,9 @@ sys.path.insert(0, HERE)
 
 import appconfig as AC                                   # noqa: E402
 
-DEFAULT_SALT = os.environ.get("EXPORT_SALT", "sjtu-brain-gut-2026")
+DEFAULT_SALT = os.environ.get("EXPORT_SALT", "") or \
+    str((AC.try_load()[0] or {}).get("export.salt") or "") or \
+    "sjtu-brain-gut-2026"
 
 # 需要匿名化的列（命中即替换）
 PII_COLUMNS = {"student_id", "email", "name", "recipient", "ip_address"}

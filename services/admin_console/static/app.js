@@ -15,15 +15,19 @@
   };
 
   const API = {
+    csrf: () => {
+      const m = document.querySelector('meta[name="csrf-token"]');
+      return m ? m.getAttribute('content') : '';
+    },
     get: (url) => fetch(url).then(r => r.json()),
     post: (url, data) => fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': API.csrf() },
       body: JSON.stringify(data || {}),
     }).then(r => r.json()),
     put: (url, data) => fetch(url, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': API.csrf() },
       body: JSON.stringify(data || {}),
     }).then(r => r.json()),
   };
@@ -51,7 +55,9 @@
     // Build nav items
     const pages = state.authed ? [
       { id: 'dashboard', label: '总览', icon: '📊' },
-      { id: 'config', label: '配置管理', icon: '⚙' },
+      { id: 'schedule', label: '调度', icon: '⏱' },
+      { id: 'appconfig', label: '应用配置', icon: '🧩' },
+      { id: 'config', label: '控制台配置', icon: '⚙' },
       { id: 'processes', label: '进程管理', icon: '🖥' },
       { id: 'ports', label: '端口映射', icon: '🔌' },
       { id: 'health', label: '自检面板', icon: '🏥' },
@@ -103,6 +109,8 @@
     switch (page) {
       case 'login': return renderLogin(area);
       case 'dashboard': return renderDashboard(area);
+      case 'schedule': return renderSchedule(area);
+      case 'appconfig': return renderAppConfig(area);
       case 'config': return renderConfig(area);
       case 'processes': return renderProcesses(area);
       case 'ports': return renderPorts(area);
@@ -235,6 +243,223 @@
   }
 
   // ── Config Page ───────────────────────────────────────────────
+  // ── Schedule Page（C：时间项统一查看与修改）────────────────────
+  async function renderSchedule(area) {
+    const d = await API.get('/api/schedule');
+    if (d.error) {
+      area.innerHTML = html`<div class="empty-state"><div class="icon">⏱</div>
+        <p>调度页不可用：${d.error}</p></div>`;
+      return;
+    }
+    const w = d.window || {};
+    const winBadge = w.waiting
+      ? '<span class="badge badge-warn">等待窗口</span>'
+      : '<span class="badge badge-ok">运行中</span>';
+    let groupsHtml = '';
+    d.groups.forEach(g => {
+      let rows = g.items.map(it => {
+        let input;
+        if (it.type === 'bool') {
+          input = html`<select data-key="${it.key}" class="sched-input">
+              <option value="true" ${it.value === true ? 'selected' : ''}>true</option>
+              <option value="false" ${it.value === false ? 'selected' : ''}>false</option>
+            </select>`;
+        } else if (it.type === 'enum') {
+          input = html`<select data-key="${it.key}" class="sched-input">${
+            (it.enum || []).map(v => html`<option value="${v}" ${String(it.value) === String(v) ? 'selected' : ''}>${v}</option>`).join('')
+          }</select>`;
+        } else {
+          input = html`<input data-key="${it.key}" class="sched-input"
+            value="${it.value === null || it.value === undefined ? '' : it.value}"
+            placeholder="${it.type}">`;
+        }
+        return html`<tr>
+          <td class="sched-key"><code>${it.key}</code></td>
+          <td>${it.label}</td>
+          <td class="sched-val">${input}</td>
+          <td class="sched-unit">${it.unit}</td>
+          <td class="sched-eff">${it.effect}</td>
+          <td class="sched-apply">${it.apply}</td>
+        </tr>`;
+      }).join('');
+      groupsHtml += html`<div class="card" style="margin-bottom:14px;">
+        <div class="card-header"><h3>${g.title}</h3></div>
+        <div class="card-body" style="overflow-x:auto;">
+          <table class="data-table sched-table">
+            <thead><tr><th>配置键</th><th>名称</th><th>当前值</th><th>单位</th><th>作用</th><th>生效方式</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div></div>`;
+    });
+
+    const timers = (d.timers || []).map(t => html`<li><code>${t.unit}</code> → <code>OnCalendar=${t.on_calendar}</code></li>`).join('');
+
+    area.innerHTML = html`
+      <div class="page-header"><h1>调度</h1>
+        <p class="page-subtitle">共 ${d.n_time_keys} 个时间项 ｜ 配置文件：<code>${d.config_path}</code>
+        ${d.writable ? '' : '（<span style="color:#e67e22">只读</span>）'} ｜ ${d.generated_at}</p></div>
+      <div class="stat-cards">
+        <div class="stat-card"><div class="stat-label">分析调度模式</div><div class="stat-value">${w.mode || '-'}</div>
+          <div class="stat-detail">${winBadge} 窗口 ${w.window_start || '-'}–${w.window_end || '-'}（${w.timezone || '-'}）</div></div>
+        <div class="stat-card"><div class="stat-label">当前是否在窗口内</div><div class="stat-value">${w.in_window ? '是' : '否'}</div>
+          <div class="stat-detail">${w.now || ''}</div></div>
+        <div class="stat-card"><div class="stat-label">静默时段</div><div class="stat-value">${d.quiet_hours_now ? '正在静默' : '非静默'}</div>
+          <div class="stat-detail">影响告警与定时拉取，不影响 webhook 接收</div></div>
+        <div class="stat-card"><div class="stat-label">时间项总数</div><div class="stat-value">${d.n_time_keys}</div>
+          <div class="stat-detail">全部来自 app.yaml（单一真源）</div></div>
+      </div>
+      <div class="card" style="margin-bottom:14px;">
+        <div class="card-header"><h3>timer 渲染预览（由 app.yaml 计算）</h3></div>
+        <div class="card-body"><ul style="font-size:13px;line-height:1.9;">${timers}</ul>
+        <p class="text-muted" style="font-size:12px;">保存后会重渲染 <code>*.timer.d/10-schedule.conf</code>，需 <code>systemctl daemon-reload</code> 生效。</p></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;">
+        <button class="btn btn-primary" onclick="app.saveSchedule()">保存全部修改</button>
+        <button class="btn" onclick="app.previewSchedule()">变更预览</button>
+        <span id="sched-status" style="font-size:13px;color:#666;line-height:2;"></span>
+      </div>
+      ${groupsHtml}
+    `;
+  }
+
+  app.collectSchedule = () => {
+    const out = {};
+    $$('.sched-input').forEach(el => { out[el.getAttribute('data-key')] = el.value; });
+    return out;
+  };
+
+  app.saveSchedule = async () => {
+    const updates = app.collectSchedule();
+    const st = $('#sched-status');
+    st.textContent = '保存中...';
+    const r = await API.post('/api/schedule', { updates: updates, apply_timers: true });
+    if (r.success) {
+      const n = (r.changes || []).length;
+      st.textContent = `✅ 已保存 ${n} 项，备份 ${r.backup || '-'}；timer 已重渲染（需 daemon-reload）`;
+      toast('调度配置已保存', 'success');
+    } else {
+      st.textContent = '❌ ' + (r.error || JSON.stringify(r.errors || r));
+      toast('保存失败', 'error');
+    }
+  };
+
+  app.previewSchedule = async () => {
+    const updates = app.collectSchedule();
+    const r = await API.post('/api/schedule/preview', { updates: updates });
+    const st = $('#sched-status');
+    if (r.ok) {
+      const changed = (r.changes || []).filter(c => String(c.before) !== String(c.after));
+      st.textContent = changed.length
+        ? '待变更：' + changed.map(c => `${c.key}: ${c.before} → ${c.after}`).join('；')
+        : '无变更';
+    } else {
+      st.textContent = '❌ ' + JSON.stringify(r.errors || r);
+    }
+  };
+
+  // ── App Config Page（app.yaml 全量键：查看/修改/校验/恢复默认）────
+  async function renderAppConfig(area) {
+    const d = await API.get('/api/appconfig');
+    if (d.error) {
+      area.innerHTML = html`<div class="empty-state"><div class="icon">🧩</div>
+        <p>应用配置页不可用：${d.error}</p></div>`;
+      return;
+    }
+    let groupsHtml = '';
+    d.groups.forEach(g => {
+      const rows = g.items.map(it => {
+        let input;
+        if (it.secret) {
+          input = html`<span class="badge ${it.configured ? 'badge-success' : 'badge-muted'}">` +
+            (it.configured ? '已配置（隐藏）' : '未配置') + `</span>` +
+            html`<span class="sched-unit">　密钥请到 secrets.env 维护</span>`;
+        } else if (it.enum) {
+          input = html`<select data-key="${it.key}" class="sched-input">${
+            it.enum.map(v => html`<option value="${v}" ${String(it.value) === String(v) ? 'selected' : ''}>${v}</option>`).join('')
+          }</select>`;
+        } else {
+          input = html`<input data-key="${it.key}" class="sched-input"
+            value="${it.value === null || it.value === undefined ? '' : it.value}"
+            placeholder="${it.type}">`;
+        }
+        return html`<tr>
+          <td class="sched-key"><code>${it.key}</code></td>
+          <td>${it.type}${it.required ? ' · 必填' : ''}</td>
+          <td class="sched-val">${input}</td>
+          <td class="sched-unit"><code>${it.env || '—'}</code></td>
+          <td class="sched-apply">${it.apply}</td>
+        </tr>`;
+      }).join('');
+      groupsHtml += html`<div class="card" style="margin-bottom:14px;">
+        <div class="card-header"><h3>${g.title} · <code>${g.ns}.*</code>（${g.items.length} 项）</h3></div>
+        <div class="card-body" style="overflow-x:auto;">
+          <table class="data-table sched-table">
+            <thead><tr><th>配置键</th><th>类型</th><th>当前值</th><th>环境变量</th><th>生效方式</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table></div></div>`;
+    });
+
+    const errBox = (d.errors && d.errors.length)
+      ? html`<div class="card" style="margin-bottom:12px;"><div class="card-header"><h3>当前校验错误（${d.errors.length}）</h3></div>
+          <div class="card-body" style="font-size:13px;color:#e74c3c;">${d.errors.map(e => html`<div>• ${e}</div>`).join('')}</div></div>`
+      : '';
+
+    area.innerHTML = html`
+      <div class="page-header"><h1>应用配置</h1>
+        <p class="page-subtitle">共 ${d.n_keys} 项 ｜ 配置文件：<code>${d.config_path}</code>
+        ${d.writable ? '' : '（<span style="color:#e67e22">只读</span>）'} ｜ ${d.generated_at}</p></div>
+      ${errBox}
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+        <button class="btn btn-primary" onclick="app.saveAppConfig()">保存修改</button>
+        <button class="btn" onclick="app.previewAppConfig()">变更预览</button>
+        <button class="btn" onclick="app.restoreAppConfig()">恢复默认值</button>
+        <span id="appcfg-status" style="font-size:13px;color:#666;line-height:2;"></span>
+      </div>
+      ${groupsHtml}
+    `;
+  }
+
+  app.collectAppConfig = () => {
+    const out = {};
+    $$('.sched-input').forEach(el => {
+      const k = el.getAttribute('data-key');
+      if (k) out[k] = el.value;
+    });
+    return out;
+  };
+
+  app.saveAppConfig = async () => {
+    const st = $('#appcfg-status');
+    st.textContent = '保存中...';
+    const r = await API.post('/api/appconfig', { updates: app.collectAppConfig() });
+    if (r.success) {
+      st.textContent = `✅ 已保存 ${(r.changes || []).length} 项；备份 ${r.backup || '-'}；${(r.rendered || []).join('；')}`;
+      toast('应用配置已保存', 'success');
+    } else {
+      st.textContent = '❌ ' + (r.error || JSON.stringify(r.errors || r));
+      toast('保存失败', 'error');
+    }
+  };
+
+  app.previewAppConfig = async () => {
+    const r = await API.post('/api/appconfig/preview', { updates: app.collectAppConfig() });
+    const st = $('#appcfg-status');
+    if (r.ok) {
+      const ch = (r.changes || []).filter(c => String(c.before) !== String(c.after));
+      st.textContent = ch.length ? ('待变更：' + ch.map(c => `${c.key}: ${c.before} → ${c.after}`).join('；')) : '无变更';
+    } else {
+      st.textContent = '❌ ' + JSON.stringify(r.errors || r);
+    }
+  };
+
+  app.restoreAppConfig = async () => {
+    if (!confirm('确定把 app.yaml 恢复为模板默认值？（当前文件会先备份）')) return;
+    const r = await API.post('/api/appconfig/restore', { confirm: true });
+    const st = $('#appcfg-status');
+    st.textContent = r.success ? `✅ 已恢复默认；备份 ${r.backup}` : ('❌ ' + (r.error || '失败'));
+    if (r.success) { toast('已恢复默认值', 'success'); renderAppConfig($('#page-area')); }
+  };
+
   async function renderConfig(area) {
     const cfg = await API.get('/api/config');
     const data = cfg.data || {};

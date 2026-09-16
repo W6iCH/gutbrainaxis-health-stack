@@ -97,6 +97,32 @@
     </div>
 </div>
 
+<div class="card">
+    <div class="card-header"><h3>5. 运行与质量数据导出（D）</h3></div>
+    <div class="card-body">
+        <div class="export-section">
+            <div class="form-row">
+                <label>数据集:</label>
+                <select id="exportOpsSet" class="form-select">
+                    <option value="queues">队列运行状况</option>
+                    <option value="adherence">依从性矩阵</option>
+                    <option value="quality">数据质量</option>
+                    <option value="system">系统健康</option>
+                </select>
+                <label>格式:</label>
+                <select id="exportOpsFormat" class="form-select">
+                    <option value="csv">CSV</option>
+                    <option value="json">JSON</option>
+                </select>
+                <label>窗口(天):</label>
+                <input type="number" id="exportOpsDays" class="form-select" value="30" min="1" max="365" style="width:90px;">
+                <button class="btn btn-primary" onclick="exportData('ops')">下载</button>
+            </div>
+            <p class="text-muted">队列（LLM/邮件/webhook）、逐人逐日依从性矩阵、缺失/异常/重复/未映射、服务探活与库状态</p>
+        </div>
+    </div>
+</div>
+
 <style>
 .export-section { padding: 8px 0; }
 .form-row { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
@@ -137,6 +163,13 @@ function exportData(type) {
         }
         case 'combined': {
             url += 'combined';
+            break;
+        }
+        case 'ops': {
+            const set = document.getElementById('exportOpsSet').value;
+            const format = document.getElementById('exportOpsFormat').value;
+            const days = document.getElementById('exportOpsDays').value;
+            url += set + '?format=' + format + '&days=' + days;
             break;
         }
     }

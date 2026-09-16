@@ -62,6 +62,14 @@ credentials.json
 cloudflared/
 .llm_queue/
 .email_queue/
+.webhook_queue/
+
+# 运行期状态与安全敏感文件（绝不入库）
+login_lockout.json
+.health_state.json
+alerts_quiet.log
+app.yaml.bak.*
+*.bak.[0-9]*
 config/initial_password.txt
 config/console.env
 config/passwd

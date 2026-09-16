@@ -26,14 +26,14 @@ case "${1:-all}" in
     echo ""
 
     # Start web server
-    echo "[1/2] 🚀 启动网页反馈服务器 (端口 8000 + 8080)..."
-    python3 feedback_server.py 8000 8080 &
+    echo "[1/2] 🚀 启动网页反馈服务器 (端口 ${PORT_SURVEY_FEEDBACK:-8000} + ${PORT_SURVEY_FEEDBACK_ALT:-8080})..."
+    python3 feedback_server.py "${PORT_SURVEY_FEEDBACK:-8000}" "${PORT_SURVEY_FEEDBACK_ALT:-8080}" &
     WEB_PID=$!
     sleep 2
 
-    if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
-        echo "  ✅ Web feedback server running on :8000 (PID: $WEB_PID)"
-    elif curl -sf http://localhost:8080/health > /dev/null 2>&1; then
+    if curl -sf "http://localhost:${PORT_SURVEY_FEEDBACK:-8000}/health" > /dev/null 2>&1; then
+        echo "  ✅ Web feedback server running on :${PORT_SURVEY_FEEDBACK:-8000} (PID: $WEB_PID)"
+    elif curl -sf "http://localhost:${PORT_SURVEY_FEEDBACK_ALT:-8080}/health" > /dev/null 2>&1; then
         echo "  ✅ Web feedback server running on :8080 (PID: $WEB_PID)"
     else
         echo "  ❌ Web server failed to start"
@@ -57,7 +57,7 @@ case "${1:-all}" in
 
   status)
     if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
-        echo "  📊 Feedback:   ✅ Running (:8000)"
+        echo "  📊 Feedback:   ✅ Running (:${PORT_SURVEY_FEEDBACK:-8000})"
     else
         echo "  📊 Feedback:   ❌ Not running"
     fi

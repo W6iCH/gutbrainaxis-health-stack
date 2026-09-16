@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}依从性时间序列{% endblock %}
+{% block extra_head %}
+<style>
+.heat-wrap { overflow-x: auto; }
+.heat-table { border-collapse: separate; border-spacing: 1px; font-size: 10px; }
+.heat-table th { font-weight: 500; color: #888; font-size: 10px; padding: 0 1px; writing-mode: vertical-rl; height: 60px; }
+.heat-cell { width: 11px; height: 14px; border-radius: 2px; background: #eef1f4; display: inline-block; }
+.heat-cell.on { background: #27ae60; }
+.heat-table td { padding: 0; }
+.heat-sid { font-size: 11px; color: #555; padding-right: 6px; white-space: nowrap; text-align: right; }
+.sum-row { font-size: 13px; line-height: 2; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>依从性时间序列</h1>
+    <p class="page-subtitle">每人逐日提交热力图 + 分链路完成率趋势 | 更新时间：{{ update_time }}
+        <label style="margin-left:8px;font-size:13px;">近
+            <select id="daysSel" onchange="reload()" style="padding:2px 6px;">
+                <option value="14">14</option><option value="30" selected>30</option>
+                <option value="60">60</option><option value="90">90</option>
+            </select> 天
+        </label>
+        <a href="/api/export/adherence?format=csv" class="btn btn-sm" style="margin-left:6px;">导出矩阵 CSV</a>
+    </p>
+</div>
+
+<div class="stat-cards" id="sumCards"></div>
+
+<div class="card" style="margin-bottom:18px;">
+    <div class="card-header"><h3>整体完成率趋势（分链路）</h3></div>
+    <div class="card-body"><canvas id="trendChart" height="90"></canvas></div>
+</div>
+
+<div class="card">
+    <div class="card-header"><h3>逐日提交热力图（每行一名学生，绿=当天有提交）</h3></div>
+    <div class="card-body heat-wrap"><div id="heat"></div></div>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+var CHART = null;
+async function reload() {
+    var days = document.getElementById('daysSel').value;
+    var r = await fetch('/api/adherence?days=' + days); var d = await r.json();
+    if (d.error) { alert('加载失败: ' + d.error); return; }
+
+    // 汇总卡
+    var s = d.summary || {};
+    var names = {scale: '量表', diet: '饮食', exercise: '运动'};
+    var html = '<div class="stat-card"><div class="stat-label">观察窗口</div><div class="stat-value">' + d.dates.length + '</div><div class="stat-detail">天</div></div>';
+    ['scale','diet','exercise'].forEach(function(k){
+        var v = s[k] || {};
+        html += '<div class="stat-card"><div class="stat-label">' + names[k] + '链路覆盖</div><div class="stat-value">' +
+                ((v.coverage||0)*100).toFixed(0) + '%</div><div class="stat-detail">' +
+                (v.students_submitted||0) + ' / ' + (d.n_students||0) + ' 人，共 ' + (v.records||0) + ' 条</div></div>';
+    });
+    html += '<div class="stat-card"><div class="stat-label">目标人群</div><div class="stat-value">' + (d.n_roster||0) + '</div><div class="stat-detail">在册学生</div></div>';
+    document.getElementById('sumCards').innerHTML = html;
+
+    // 趋势图
+    var ctx = document.getElementById('trendChart');
+    var ds = [
+        {label:'量表', data:d.trend.scale, borderColor:'#2980b9', backgroundColor:'rgba(41,128,185,.12)', tension:.25},
+        {label:'饮食', data:d.trend.diet, borderColor:'#27ae60', backgroundColor:'rgba(39,174,96,.12)', tension:.25},
+        {label:'运动', data:d.trend.exercise, borderColor:'#e67e22', backgroundColor:'rgba(230,126,34,.12)', tension:.25},
+        {label:'整体', data:d.overall_trend, borderColor:'#8e44ad', backgroundColor:'rgba(142,68,173,.10)', borderDash:[5,4], tension:.25}
+    ];
+    if (CHART) { CHART.destroy(); }
+    CHART = new Chart(ctx, {type:'line',
+        data:{labels:d.dates, datasets:ds},
+        options:{plugins:{legend:{position:'bottom'}}, scales:{y:{beginAtZero:true, max:1}}}
+    });
+
+    // 热力图
+    var rows = d.students, dates = d.dates;
+    var html2 = '<table class="heat-table"><thead><tr><th style="writing-mode:horizontal-tb;text-align:right;">学号</th>';
+    dates.forEach(function(dt){ html2 += '<th>' + dt.slice(5) + '</th>'; });
+    html2 += '<th style="writing-mode:horizontal-tb;">活跃/率</th></tr></thead><tbody>';
+    rows.forEach(function(s){
+        html2 += '<tr><td class="heat-sid">' + s.student_id + '</td>';
+        s.cells.forEach(function(c, i){
+            html2 += '<td><span class="heat-cell' + (c ? ' on' : '') + '" title="' + dates[i] + '"></span></td>';
+        });
+        html2 += '<td class="heat-sid">' + s.active_days + '/' + dates.length + ' (' + (s.rate*100).toFixed(0) + '%)</td></tr>';
+    });
+    html2 += '</tbody></table>';
+    document.getElementById('heat').innerHTML = html2;
+}
+document.addEventListener('DOMContentLoaded', reload);
+</script>
+{% endblock %}

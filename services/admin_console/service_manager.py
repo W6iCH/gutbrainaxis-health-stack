@@ -20,7 +20,7 @@ SERVICE_WHITELIST = {
         "kind": "service",
         "port": 8000,
         "workdir": "sjtu_survey_pro",
-        "cmd": ["python3", "feedback_server.py", "8000", "8080"],
+        "cmd": ["python3", "feedback_server.py"],
     },
     "diet_feedback": {
         "label": "饮食反馈页面",
@@ -28,15 +28,23 @@ SERVICE_WHITELIST = {
         "kind": "service",
         "port": 8001,
         "workdir": "diet_survey",
-        "cmd": ["python3", "diet_feedback_server.py", "8001"],
+        "cmd": ["python3", "diet_feedback_server.py"],
     },
     "webhook": {
-        "label": "Webhook 接收器",
+        "label": "饮食 Webhook 接收器",
         "unit": "research-diet-webhook",
         "kind": "service",
         "port": 9876,
         "workdir": "diet_survey",
-        "cmd": ["python3", "webhook_listener.py", "9876"],
+        "cmd": ["python3", "webhook_listener.py"],
+    },
+    "survey_webhook": {
+        "label": "量表 Webhook 接收器",
+        "unit": "research-survey-webhook",
+        "kind": "service",
+        "port": 9877,
+        "workdir": "sjtu_survey_pro",
+        "cmd": ["python3", "survey_webhook_listener.py"],
     },
     "diet_llm_queue": {
         "label": "LLM 分析队列",
@@ -109,6 +117,22 @@ SERVICE_WHITELIST = {
         "port": -1,
         "workdir": "",
         "cmd": ["python3", "scripts/health_monitor.py", "--quiet"],
+    },
+    "daily_report": {
+        "label": "每日报告（定时）",
+        "unit": "research-daily-report.timer",
+        "kind": "timer",
+        "port": -1,
+        "workdir": "",
+        "cmd": ["python3", "feedback/daily_report.py"],
+    },
+    "rclone_backup": {
+        "label": "远端备份（定时）",
+        "unit": "research-rclone-backup.timer",
+        "kind": "timer",
+        "port": -1,
+        "workdir": "",
+        "cmd": ["bash", "scripts/rclone-backup.sh"],
     },
 }
 

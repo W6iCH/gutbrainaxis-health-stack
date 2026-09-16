@@ -18,10 +18,13 @@ import argparse
 from playwright.sync_api import sync_playwright
 
 # 问卷 ID 与登录态配置全部来自环境变量，仓库内不保留真实 ID 与本地个人路径。
-# 部署时在 .env 中设置 SURVEY_ID / CHROME_USER_DATA 即可。
-SURVEY_ID = os.environ.get("SURVEY_ID", "__YOUR_SURVEY_ID__")  # From the survey URL
-FETCH_URL = f"https://wj.sjtu.edu.cn/api/survey/{SURVEY_ID}/results"
-STAT_URL = f"https://wj.sjtu.edu.cn/api/survey/{SURVEY_ID}/stat"
+# 部署时在 app.yaml 里设置 survey_platforms.scale.survey_id（→ WJX_SURVEY_ID）；
+# 本脚本保留 SURVEY_ID 作为历史别名（优先读已声明的 WJX_SURVEY_ID）。
+SURVEY_ID = os.environ.get("WJX_SURVEY_ID") or os.environ.get("SURVEY_ID", "__YOUR_SURVEY_ID__")
+API_BASE = os.environ.get("WJX_SURVEY_API_BASE", "https://wj.sjtu.edu.cn/api/v1/public/result")
+_WJX_ROOT = API_BASE.split("/api/")[0] if "/api/" in API_BASE else "https://wj.sjtu.edu.cn"
+FETCH_URL = f"{_WJX_ROOT}/api/survey/{SURVEY_ID}/results"
+STAT_URL = f"{_WJX_ROOT}/api/survey/{SURVEY_ID}/stat"
 CHROME_USER_DATA = os.environ.get("CHROME_USER_DATA", "")
 
 DEFAULT_OUTPUT = os.path.join(

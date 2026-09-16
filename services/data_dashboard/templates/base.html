@@ -59,6 +59,28 @@
                         <a href="/completion" class="nav-item {% if request.path == '/completion' %}active{% endif %}">
                             <span class="nav-label">完成情况总览</span>
                         </a>
+                        <a href="/adherence" class="nav-item {% if request.path == '/adherence' %}active{% endif %}">
+                            <span class="nav-label">依从性时间序列</span>
+                        </a>
+                    </div>
+                </div>
+                <!-- L1: 运行与质量（D） -->
+                <div class="nav-group">
+                    <div class="nav-group-title" onclick="toggleNavGroup(this)">
+                        <span class="nav-group-icon">&#9881;</span>
+                        <span>运行与质量</span>
+                        <span class="nav-group-arrow">&#9660;</span>
+                    </div>
+                    <div class="nav-group-items">
+                        <a href="/queues" class="nav-item {% if request.path == '/queues' %}active{% endif %}">
+                            <span class="nav-label">队列运行状况</span>
+                        </a>
+                        <a href="/quality" class="nav-item {% if request.path == '/quality' %}active{% endif %}">
+                            <span class="nav-label">数据质量</span>
+                        </a>
+                        <a href="/system" class="nav-item {% if request.path == '/system' %}active{% endif %}">
+                            <span class="nav-label">系统健康</span>
+                        </a>
                     </div>
                 </div>
             </nav>

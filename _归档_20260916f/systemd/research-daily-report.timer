@@ -1,0 +1,14 @@
+# ────────────────────────────────────────────────────────────────────────────
+#  每日报告定时器 — 每天 08:30 触发
+#  触发时间来自 config/app.yaml → schedule.daily_report_at
+# ────────────────────────────────────────────────────────────────────────────
+[Unit]
+Description=Research Daily Report Timer (daily)
+
+[Timer]
+OnCalendar=*-*-* 08:30:00
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,143 @@
+# ─────────────────────────────────────────────────────────────
+#  真实数据 —— 永不入库
+# ─────────────────────────────────────────────────────────────
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# 数据导出 / 缓存
+*.json.gz
+*.csv.gz
+data/
+exports/
+backups/
+
+# 明确排除：本项目历史真实数据库与数据导出（即使更名也要拦截）
+survey_data.db*
+diet_data.db*
+exercise_data.db*
+survey_data.db.v1.bak
+sjtu_survey_data*.json
+population_stats.json
+!population_stats.default.json
+roster.json
+
+# 自检 / 导出 / 测试产物
+logs/selfcheck.json
+_测试证据_*/
+exports/
+export/
+
+# ─────────────────────────────────────────────────────────────
+#  日志 —— 永不入库
+# ─────────────────────────────────────────────────────────────
+*.log
+logs/
+log/
+server.log
+feedback_trigger.log
+*.log.*
+
+# ─────────────────────────────────────────────────────────────
+#  凭据 / 密钥 / 运行态配置 —— 永不入库
+# ─────────────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+# 统一配置：模板入库，真实配置不入库
+app.yaml
+!app.yaml.example
+secrets.env
+!secrets.env.example
+initial_password.txt
+rclone.conf
+credentials.json
+*.pem
+*.key
+*.p12
+*.pfx
+cloudflared/
+.llm_queue/
+.email_queue/
+config/initial_password.txt
+config/console.env
+config/passwd
+config/secret_key
+config/.must_change_password
+config/*.local
+config/app.yaml
+secrets/
+
+# 显式保留所有配置模板（可在任意层级）
+!**/config/*.example
+!config/*.example
+!*.example
+
+# ─────────────────────────────────────────────────────────────
+#  Python
+# ─────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+env/
+ENV/
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ─────────────────────────────────────────────────────────────
+#  Node / 前端
+# ─────────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# ─────────────────────────────────────────────────────────────
+#  编辑器 / 操作系统
+# ─────────────────────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
+\#*\#
+
+# ─────────────────────────────────────────────────────────────
+#  备份文件（历史遗留的 .bak 一律不入库）
+# ─────────────────────────────────────────────────────────────
+*.bak
+*.bak[0-9]
+*.bak_*
+*.orig
+*.rej
+
+# ─────────────────────────────────────────────────────────────
+#  运行时产物
+# ─────────────────────────────────────────────────────────────
+*.pid
+*.sock
+*.tmp
+.trash/
+install.log
+
+# ─────────────────────────────────────────────────────────────
+#  内部工作文档（含本地绝对路径，仅留档，不入库）
+# ─────────────────────────────────────────────────────────────
+00_*.md

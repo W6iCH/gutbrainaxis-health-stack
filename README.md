@@ -37,20 +37,22 @@
 | 服务 | 目录 | 入口 | 默认端口 | 说明 |
 |---|---|---|---|---|
 | 问卷反馈 | `services/sjtu_survey_pro` | `feedback_server.py` | 8000 / 8080 | 计分 + 个人报告 |
-| 问卷同步 | `services/sjtu_survey_pro` | `survey_sync_cron.py` | — (timer) | 每小时增量同步 |
+| 问卷同步 | `services/sjtu_survey_pro` | `survey_sync_cron.py` | — (timer) | 每小时增量同步（**兜底**） |
+| **量表 Webhook** | `services/sjtu_survey_pro` | `survey_webhook_listener.py` | **9877** | **本轮新增**：平台回调→秒级计分 |
 | 问卷邮件 | `services/sjtu_survey_pro` | `email_feedback.py` | — (内联) | 队列 + 退避重试 |
 | 饮食反馈 | `services/diet_survey` | `diet_feedback_server.py` | 8001 | 饮食建议报告 |
-| 饮食同步 | `services/diet_survey` | `diet_sync_cron.py` | — (timer) | **本轮新增排程**，每 15 分钟 |
+| 饮食同步 | `services/diet_survey` | `diet_sync_cron.py` | — (timer) | 每 15 分钟 |
 | 饮食 Webhook | `services/diet_survey` | `webhook_listener.py` | 9876 | 接收提交事件 |
-| 饮食 LLM | `services/diet_survey` | `diet_llm_queue.py` | — (worker) | 营养分析队列 |
+| 饮食 LLM | `services/diet_survey` | `diet_llm_queue.py` | — (worker) | 营养分析队列（**支持 offpeak/hybrid 窗口调度**） |
 | 运动同步 | `services/exercise_survey` | `exercise_sync_cron.py` | — (timer) | 每 15 分钟增量同步 |
-| 数据看板 | `services/data_dashboard` | `app.py` | 8090 | 研究者看板 |
-| 每日报告 | `services/feedback` | `daily_report.py` | — (timer) | **本轮新增排程**，默认 08:30 |
-| 管理控制台 | `services/admin_console` | `app.py` | 9000 | 含「自检」页 |
+| 数据看板 | `services/data_dashboard` | `app.py` | 8090 | 研究者看板（**新增队列/依从性/质量/系统健康 4 视图**） |
+| 每日报告 | `services/feedback` | `daily_report.py` | — (timer) | 默认 08:30 |
+| 管理控制台 | `services/admin_console` | `app.py` | 9000 | 含「自检」与**「调度」**页 |
 
-> 单元总数：**12 个 service + 6 个 timer**，逐条清单见 [`功能与进程清单.md`](功能与进程清单.md)。
+> 单元总数：**13 个 service + 6 个 timer = 19 个 systemd 单元**（逐条清单见 [`功能与进程清单.md`](功能与进程清单.md)）。
 > 端口都可在统一配置 `config/app.yaml`（→ `/etc/research-app/app.yaml`）或控制台界面里改，
 > 控制台会做**冲突检测**并重新生成 Nginx 配置。
+> **改配置即改行为**：端口/周期/窗口/静默均由 `app.yaml` 渲染进 systemd（见 [`docs/时间项配置总表.md`](docs/时间项配置总表.md)）。
 
 ## 3. 三步安装
 
@@ -83,18 +85,21 @@ sudo bash install.sh
 ├── install.sh              # 一键安装（幂等）
 ├── uninstall.sh            # 卸载（默认保留数据）
 ├── verify.sh               # 自检
+├── ci.sh                   # 发布前质量门禁（7 步，本轮新增）
+├── tests/                  # 单元 + 集成测试（50 项，本轮新增）
 ├── services/               # 五套服务源码
-│   ├── sjtu_survey_pro/    #   问卷评估 + 计分核心 survey_analysis.py
-│   ├── diet_survey/        #   饮食记录
+│   ├── sjtu_survey_pro/    #   问卷评估 + 计分核心 + 量表 Webhook
+│   ├── diet_survey/        #   饮食记录 + LLM 队列（窗口调度）
 │   ├── exercise_survey/    #   运动问卷
-│   ├── data_dashboard/     #   数据看板
-│   └── admin_console/      #   管理控制台
-├── systemd/                # systemd 单元与 timer
+│   ├── data_dashboard/     #   数据看板（8 视图）
+│   ├── admin_console/      #   管理控制台（含调度页）
+│   └── common/             #   公共库：窗口/队列/限流/校验/错误/运行期
+├── systemd/                # systemd 单元与 timer（13 service + 6 timer）
 ├── nginx/                  # 反向代理站点模板
 ├── config/                 # *.example 配置模板（真实配置安装时生成）
 ├── scripts/                # 建库 / 备份 / 告警 / 健康巡检
-├── tools/                  # 发布前脱敏扫描器
-├── docs/                   # 使用说明（见 §8）
+├── tools/                  # 配置校验·自检·脱敏·模拟数据·时间项文档生成
+├── docs/                   # 安装/控制台/故障/运维/时间项/Webhook 说明
 └── 01_评分修复/            # 计分逻辑审计报告 / 测试 / 旧新分回归
 ```
 
@@ -108,8 +113,12 @@ sudo bash install.sh
 | 进程开关 | 一键 start / stop / restart / enable / disable，实时状态（systemd 或 timer） |
 | 端口映射 | 可视化改端口与反代映射 → 变更预览 → `nginx -t` → reload，冲突检测 + 自动回滚 |
 | 自检面板 | 服务探活、日志尾查看、数据库可读写检查 |
-| **自检**（本轮新增） | `/selfcheck` 页 + `/api/selfcheck`，复用 `tools/selfcheck.py` 同一后端 |
-| 审计 | 所有写操作记入审计日志 |
+| **自检** | `/selfcheck` 页 + `/api/selfcheck`，复用 `tools/selfcheck.py` 同一后端 |
+| **调度**（本轮新增） | `/api/schedule`：分组展示**全部 55 个时间项**（周期/时点/窗口/静默/重试/超时），可修改 + 变更预览 + 写前自动备份 + 写入审计 |
+| 审计 | 所有写操作记入审计日志（含登录/锁定/配置/调度/进程/端口） |
+
+> 安全：口令强度≥10位且含字母数字；登录失败 5 次锁 15 分钟（**持久化**，重启不可绕过）；
+> Cookie `HttpOnly`+`SameSite=Lax`；写操作需 `X-CSRF-Token`。
 
 技术选型、鉴权方式、接口清单见 [`02_控制台/设计说明.md`](02_控制台/设计说明.md) 与
 [`services/admin_console/README.md`](services/admin_console/README.md)。
@@ -124,6 +133,16 @@ VSI/GSRS 量程错误、PSQI 成分算法不符、WHOQOL-BREF 量纲混用等）
 自带 `optionN` 序号计分，单选题按**实测真实 label** 显式映射，**未识别即报错**（不再静默丢弃）。
 详见 [`services/sjtu_survey_pro/TECHNICAL.md`](services/sjtu_survey_pro/TECHNICAL.md) §二·A 与
 [`14_评分标准/03_条目库_修正/与已发布版本差异.md`](../14_评分标准/03_条目库_修正/与已发布版本差异.md)。
+
+**口径一致性可验证**：`tools/verify_scoring_parity.py` 用同一份输入同时跑
+「程序内计分实现」与「课题权威条目库」，四层断言（条目级/量表级/常量级/缺失与严格模式）
+**逐条相同**（当前 **1771 项断言全等**）；已纳入自检 `parity` 组与 CI。
+
+```bash
+PY=~/.openclaw/workspace/.venv-diet/bin/python3
+$PY tools/verify_scoring_parity.py          # 0=一致
+$PY tools/selfcheck.py --only parity        # 自检同一后端
+```
 
 本仓库还提供：
 
@@ -189,7 +208,9 @@ python3 tools/build_population_stats.py --raw <你的问卷.json> --out populati
 由 JSON Schema `config/app.schema.json` 做**启动即校验**。
 
 覆盖范围：端口 / 域名 / DNS / 反向代理、各服务目录与入口、数据库路径、SMTP 与告警、
-LLM（主+备）、三个问卷平台 Token、调度周期、日志级别、备份策略、自检开关。
+LLM（主+备）、三个问卷平台 Token、**LLM 分析窗口与节流**、**Webhook 重试与限流**、
+调度周期与静默时段、日志级别、备份策略、自检开关。
+共 **151 个键**，其中**时间项 55 个**（完整清单：[`docs/时间项配置总表.md`](docs/时间项配置总表.md)）。
 
 **密钥分离**：`app.yaml` 里只写 `"${SMTP_PASSWORD}"` 这类引用；真实值放在
 `/etc/research-app/secrets.env`（0600）。**仓库内零密钥**。
@@ -200,14 +221,52 @@ PY=~/.openclaw/workspace/.venv-diet/bin/python3
 # 校验（缺项 / 类型错 / 越界 / 未替换占位符 → 逐条报出键位置，退出码 1）
 $PY tools/appconfig.py --config /etc/research-app/app.yaml --check
 
+# schema 与 app.yaml.example **无悬空键**（发布门禁，CI 已含）
+$PY tools/appconfig.py --check-example-keys
+
+# 当前分析窗口 / 静默时段状态
+$PY tools/appconfig.py --show-window
+
 # 渲染 systemd 环境文件（由 app.yaml 生成，不要手改 /etc/research-app/env）
 $PY tools/appconfig.py --config /etc/research-app/app.yaml --render-env /etc/research-app/env
 
-# 渲染 timer 周期覆盖片段（来自 schedule.*）
+# 渲染 timer 周期覆盖片段（OnCalendar/RandomizedDelaySec/AccuracySec/Persistent）
 $PY tools/appconfig.py --config /etc/research-app/app.yaml --render-timers /etc/systemd/system
+
+# 生成/校验《时间项配置总表》（防止文档与配置漂移）
+$PY tools/gen_time_config_doc.py && $PY tools/gen_time_config_doc.py --check
 ```
 
 安装脚本会自动完成上述渲染；你只需改 `app.yaml`（并在 `secrets.env` 填密钥）后重启服务。
+
+**可配置范围 = 所有部署个性化项**（不止时间点）：名册路径与学号前缀、三个问卷 Token 与
+**问卷 ID/API 地址**、端口与域名/**子域**、各服务与数据/DB 路径、SMTP（收件人/抄送）、
+LLM 主备（地址/模型/key 列表/**温度**/token 上限/超时）、评分（口径版本、**自定义分档切点**、
+**反向条目开关**）、**干预起止日期与周次定义**、**目标完成度阈值**、告警阈值与冷却、
+备份保留与远端、日志级别与轮转份数、队列并发与节流、webhook 开关与重试、静默时段。
+共 **180 项**，完整清单见 [`docs/可配置项总清单.md`](docs/可配置项总清单.md)。
+
+**三方一致**：`schema ↔ app.yaml.example ↔ 实际读取` 由三条门禁保证——
+`--check-example-keys`（无悬空键）、`config.env_bridge` 自检（服务读的环境变量必须
+在 `ENV_MAP` 中声明，当前 0 未声明）、`gen_config_doc.py --check`（文档不漂移）。
+
+**干预时间轴与目标完成度**已外提为可配文件（默认值 = 原硬编码值，行为不变）：
+`config/study_calendar.example.yaml`（安装为 `study.calendar_path`），
+由 `services/common/lib_study.py` 读取；控制台「应用配置」页可直接查看与修改。
+
+### 9.1 「安排到晚上 API 低谷」（本轮新增）
+
+```yaml
+analysis:
+  mode: offpeak          # realtime（默认，旧行为）| offpeak（仅窗口内算）| hybrid（窗口内全速+白天限量）
+  window_start: "23:00"  # 支持跨天，如 23:00 → 06:00
+  window_end:   "06:00"
+  timezone: Asia/Shanghai
+  workdays: "1,2,3,4,5,6,7"
+  throttle_seconds: 3
+```
+
+窗口外任务**只入队不消费**（不丢）；状态在控制台「调度」页与看板「队列运行状况」页可见。
 
 ---
 
@@ -254,7 +313,8 @@ $PY tools/clear_mock_data.py --root /tmp/gba-test --report /tmp/clear.json
 
 * 模拟数据一律带 `MOCK-` 前缀；`clear_mock_data.py` 退出码 0 才代表清干净。
 * 清除含：库记录、LLM 队列任务、含标记的日志行，并做 `WAL checkpoint + VACUUM`。
-* 完整测试报告与证据： [`测试报告_模拟数据.md`](测试报告_模拟数据.md)、`_测试证据_20260916/`。
+* 看板「数据质量」页也直接展示模拟残留（`mock_residue`），可随时复核。
+* 完整测试报告与证据： [`测试报告_模拟数据.md`](测试报告_模拟数据.md)、`_测试证据_20260916f/`。
 
 ---
 
@@ -268,6 +328,12 @@ $PY tools/clear_mock_data.py --root /tmp/gba-test --report /tmp/clear.json
 | [`docs/常见故障排查.md`](docs/常见故障排查.md) | 症状 → 定位 → 处置 |
 | [`docs/升级备份与回滚.md`](docs/升级备份与回滚.md) | 升级、备份、回滚、卸载 |
 | [`docs/数据模型与存储.md`](docs/数据模型与存储.md) | 逐库逐表字段、存放路径、保留策略 |
+| [`docs/时间项配置总表.md`](docs/时间项配置总表.md) | **全部 55 个时间项**（键名/默认值/单位/作用/生效方式）+ timer 渲染对照 |
+| [`docs/Webhook配置与验证.md`](docs/Webhook配置与验证.md) | 量表 Webhook 启用 3 步、验证 4 步、平台不支持时的回落逻辑 |
+| [`docs/运维手册.md`](docs/运维手册.md) | 日常巡检、常用操作、故障处置、密钥轮换、上线检查单 |
+| [`docs/可配置项总清单.md`](docs/可配置项总清单.md) | **全部 180 个可配置项**（键名/类型/默认值/作用/必填/生效方式/注入的环境变量名） |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | 开发约定、改配置即改代码、测试与发布门禁 |
+| [`CHANGELOG.md`](CHANGELOG.md) | 版本改动记录（含「为什么」） |
 | [`功能与进程清单.md`](功能与进程清单.md) | 全部功能与 systemd 单元/端口/落点 |
 | [`设计复查_问题清单.md`](设计复查_问题清单.md) | 本轮复查发现的问题、严重度、处理情况 |
 | [`变更清单.md`](变更清单.md) | 本轮设计与功能改动逐条 |
@@ -291,27 +357,41 @@ $PY tools/clear_mock_data.py --root /tmp/gba-test --report /tmp/clear.json
 # ① 脱敏扫描：必须 0 阻断项（退出码 0）
 python3 tools/scan_sensitive.py
 
-# ② 评分修复自测：必须 111 项全通过
+# ② 一键质量门禁（7 步：语法/编译/测试/悬空键/示例校验/脱敏/可选 dry-run）
+bash ci.sh --with-install
+
+# ③ 评分修复自测：必须 111 项全通过
 python3 01_评分修复/tests/test_scoring.py
 
-# ③ 安装脚本语法与幂等（不改系统）
-bash -n install.sh uninstall.sh verify.sh
-bash install.sh --dry-run --prefix=/tmp/dryrun-gba
-bash install.sh --dry-run --prefix=/tmp/dryrun-gba   # 再跑一次，输出应完全一致
+# ④ 新增单元/集成测试：必须全部通过
+python3 -m unittest discover -s tests -t .
 
-# ④ 统一配置校验（应报出未替换的占位符）
+# ⑤ 安装脚本语法
+bash -n install.sh uninstall.sh verify.sh ci.sh
+
+# ⑥ 统一配置校验（应报出未替换的占位符）
 python3 tools/appconfig.py --config config/app.yaml.example --check || true
 
-# ⑤ 人群基线可重建（原生口径未映射应为 0）
+# ⑦ schema 与 example 无悬空键（必须 0 错误）
+python3 tools/appconfig.py --check-example-keys
+
+# ⑧ 时间项文档与配置一致
+python3 tools/gen_time_config_doc.py --check
+
+# ⑨ 人群基线可重建（原生口径未映射应为 0）
 python3 tools/build_population_stats.py --dry-run
 
-# ⑥ 模拟数据残留检查（应无输出）
+# ⑩ 模拟数据残留检查（应无输出）
 grep -rl "MOCK-" services scripts tools 2>/dev/null | grep -v "\.py$" || echo "✅ 无残留"
+
+# ⑪ 上期已移除模块的残留关键词（排除归档，必须 0 命中；词表见 ci.sh 第 8 步）
+bash ci.sh   # 其中已内置该检查
 ```
 
 清单（逐条确认）：
 
-- [ ] 无 `*.db` / `*.db-wal` / `*.log` / `.llm_queue/` / `.email_queue/` / `logs/`
+- [ ] 无 `*.db` / `*.db-wal` / `*.log` / `.llm_queue/` / `.email_queue/` / `.webhook_queue/` / `logs/`
+- [ ] 无 `login_lockout.json` / `initial_password.txt` / `secret_key` / `app.yaml.bak.*`
 - [ ] 无真实 SMTP 密码 / API key / rclone token / cloudflared 凭据（一律占位符）
 - [ ] 无姓名 / 学号 / 邮箱 / 提交编号（含数据分析导出）
 - [ ] 无 `venv/` / `__pycache__/` / `*.bak` / `.DS_Store`

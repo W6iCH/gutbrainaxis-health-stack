@@ -21,6 +21,24 @@ from urllib.error import URLError, HTTPError
 
 BASE_URL = os.environ.get("LLM_BASE_URL", "https://models.sjtu.edu.cn/api/v1")
 MODEL_NAME = os.environ.get("LLM_MODEL_NAME", "deepseek-reasoner")
+# 采样参数与 token 上限：改为可配（此前 temperature 硬编码 0.1）
+def _f(name: str, default: float) -> float:
+    try:
+        return float(os.environ.get(name, "") or default)
+    except ValueError:
+        return default
+
+
+def _i(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, "") or default)
+    except ValueError:
+        return default
+
+
+TEMPERATURE = _f("LLM_TEMPERATURE", 0.1)
+MAX_TOKENS = _i("LLM_MAX_TOKENS", 4096)
+BACKUP_TEMPERATURE = _f("LLM_BACKUP_TEMPERATURE", 0.1)
 
 # 备用 API (DeepSeek 官方, OpenAI 兼容)
 BACKUP_BASE_URL = os.environ.get("LLM_BACKUP_BASE_URL", "https://api.deepseek.com")
@@ -252,7 +270,8 @@ def get_student_bmi(student_id: str):
 
 def _try_api_call(api_key: str, base_url: str, model: str,
                   system_prompt: str, user_prompt: str,
-                  max_tokens: int, timeout: int = 120) -> dict:
+                  max_tokens: int, timeout: int = 120,
+                  temperature: float = None) -> dict:
     """调用单个 API 端点。返回结果或引发异常。"""
     api_key_safe = api_key.encode("ascii", errors="replace").decode("ascii")
     payload = {
@@ -262,7 +281,8 @@ def _try_api_call(api_key: str, base_url: str, model: str,
             {"role": "user", "content": user_prompt},
         ],
         "max_tokens": max_tokens,
-        "temperature": 0.1,
+        # 温度可配（app.yaml → llm.*.temperature，经环境变量注入）
+        "temperature": float(TEMPERATURE if temperature is None else temperature),
     }
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     url = f"{base_url}/chat/completions"
@@ -295,7 +315,8 @@ def call_llm(system_prompt: str, user_prompt: str, max_tokens: int = 4000) -> di
         api_key, ki = key_manager.get_key()
         try:
             result = _try_api_call(api_key, BASE_URL, MODEL_NAME,
-                                   system_prompt, user_prompt, max_tokens)
+                                   system_prompt, user_prompt, max_tokens,
+                                   temperature=TEMPERATURE)
             key_manager.record_usage(ki, result["tokens_used"])
             log.info(f"LLM primary OK (key {ki}, {result['tokens_used']} tokens)")
             return result
@@ -319,7 +340,8 @@ def call_llm(system_prompt: str, user_prompt: str, max_tokens: int = 4000) -> di
     for attempt in range(2):
         try:
             result = _try_api_call(BACKUP_API_KEY, BACKUP_BASE_URL, BACKUP_MODEL_NAME,
-                                   system_prompt, user_prompt, max_tokens)
+                                   system_prompt, user_prompt, max_tokens,
+                                   temperature=BACKUP_TEMPERATURE)
             log.info(f"LLM backup OK ({BACKUP_MODEL_NAME}, {result['tokens_used']} tokens)")
             return result
         except HTTPError as e:

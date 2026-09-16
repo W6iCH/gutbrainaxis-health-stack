@@ -1,0 +1,7 @@
+# Data Dashboard — Python 依赖
+# 安装：pip install -r requirements.txt
+#
+# ⚠️ flask-cors 是 app.py 的**必需**依赖（`from flask_cors import CORS`）。
+#    缺失会导致数据看板启动即 ModuleNotFoundError，端口 8090 永远不监听。
+Flask>=3.0,<4.0
+flask-cors>=4.0

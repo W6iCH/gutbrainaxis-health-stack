@@ -197,12 +197,15 @@ fi
 #    并且自检/建库工具在 __APP_BASE__/tools/ —— 这些目录从未被安装，
 #    导致 research-health-monitor.timer 与 research-rclone-backup.timer
 #    装上即失败（unit 找不到脚本）。现一并安装。
-for sub in scripts tools docs; do
+# ⚠️ 再修正（本轮）：`config/` 也必须随包安装 —— 因为 tools/appconfig.py 在**运行期**
+#    要从 `$APP_BASE/config/app.schema.json` 读 schema、从 `app.yaml.example` 读模板；
+#    不装 config/ 会导致「安装后所有配置校验直接报 schema 不存在」。
+for sub in scripts tools docs config; do
   if [ -d "$PACKAGE_DIR/$sub" ]; then
     dry "cp -r $PACKAGE_DIR/$sub $INSTALL_ROOT/"
     echo "  ✅ $sub/ 已复制"
   else
-    warn "$sub/ 不存在，跳过（相关 timer/自检可能不可用）"
+    warn "$sub/ 不存在，跳过（相关 timer/自检/配置校验可能不可用）"
   fi
 done
 
@@ -232,7 +235,7 @@ if [ -n "$PIP_REQUIREMENTS" ]; then
   echo "  ✅ pip 依赖已安装"
 else
   # 基础依赖：flask / aiohttp / openai 等常见依赖
-  dry "$VENV_DIR/bin/pip install --upgrade pip flask aiohttp openai requests pyyaml"
+  dry "$VENV_DIR/bin/pip install --upgrade pip flask flask-cors aiohttp openai requests pyyaml"
   echo "  ✅ 基础 pip 依赖已安装"
 fi
 
@@ -281,12 +284,24 @@ ALERT_FROM=
 ALERT_TO=
 LLM_API_KEYS=__CHANGE_ME__
 LLM_BACKUP_API_KEY=__CHANGE_ME__
+WEBHOOK_SECRET=__CHANGE_ME__
+EXPORT_SALT=__CHANGE_ME__
 WJX_SURVEY_TOKEN=__CHANGE_ME__
 WJX_DIET_TOKEN=__CHANGE_ME__
 WJX_EXERCISE_TOKEN=__CHANGE_ME__
 SECRETS_EOF
   chmod_dry 600 "$SECRETS_FILE"
   echo "  ✅ 密钥模板已生成: $SECRETS_FILE（0600）"
+fi
+
+# ②b 研究设计日历（干预时间轴/周次/目标完成度）
+#     此前这些值硬编码在 data_dashboard/data.py 与 build_population_stats.py；
+#     现外提为可配文件，换课题/换学期只改本文件。
+STUDY_CAL="$ENV_DIR/study_calendar.yaml"
+if [ ! -f "$STUDY_CAL" ] && [ -f "$CONFIG_SRC/study_calendar.example.yaml" ]; then
+  dry "cp $CONFIG_SRC/study_calendar.example.yaml $STUDY_CAL"
+  chmod_dry 644 "$STUDY_CAL"
+  echo "  ✅ 研究设计日历已生成: $STUDY_CAL（请按实际干预时间轴修改）"
 fi
 
 # ③ 渲染 systemd 环境文件（由 app.yaml → env）
@@ -322,9 +337,8 @@ if [ ! -f "$CONSOLE_ENV" ] && [ -f "$CONFIG_SRC/console.env.example" ]; then
     sed -i.bak "s|^CONSOLE_PASSWORD=.*|CONSOLE_PASSWORD=${RANDOM_PW}|" "$CONSOLE_ENV" 2>/dev/null || \
       sed -i "s|^CONSOLE_PASSWORD=.*|CONSOLE_PASSWORD=${RANDOM_PW}|" "$CONSOLE_ENV" 2>/dev/null || true
     rm -f "$CONSOLE_ENV.bak"
-    # 初始口令单独落盘（600），供首次登录
-    printf '%s\n' "$RANDOM_PW" > "$CONFIG_SRC/../config/initial_password.txt" 2>/dev/null || true
-    cp "$CONFIG_SRC/../config/initial_password.txt" "$ENV_DIR/initial_password.txt" 2>/dev/null || true
+    # 初始口令只落盘到安装配置目录（0600）；
+    # ⚠️ 修正：旧版还会写回发布包内的 config/，会“弄脏”仓库工作区。
     printf '%s\n' "$RANDOM_PW" > "$ENV_DIR/initial_password.txt"
     chmod_dry 600 "$ENV_DIR/initial_password.txt"
   fi
@@ -397,16 +411,30 @@ done
 # ── 8b. 日志轮转 + 按 app.yaml 渲染 timer 周期 ────────────────────────
 log "安装日志轮转与定时周期..."
 LR_SRC="$CONFIG_SRC/logrotate.research-app"
+# 保留份数来自 app.yaml → logging.rotate_days（重装即生效）
+LOG_ROTATE_DAYS=$(APP_BASE="$INSTALL_ROOT" "$VENV_DIR/bin/python3" -c "
+import sys, os
+sys.path.insert(0, os.path.join('$PACKAGE_DIR', 'tools'))
+try:
+    import appconfig as AC
+    cfg, _ = AC.try_load('$APP_YAML', strict_placeholders=False)
+    print(int((cfg or {}).get('logging.rotate_days') or 14))
+except Exception:
+    print(14)
+" 2>/dev/null || echo 14)
+case "$LOG_ROTATE_DAYS" in
+  ''|*[!0-9]*) LOG_ROTATE_DAYS=14 ;;
+esac
 if [ -f "$LR_SRC" ]; then
   if [ "$DRY_RUN" = "true" ]; then
-    echo -e "${YELLOW}[DRY-RUN]${NC} 安装 $LOGROTATE_DIR/research-app"
+    echo -e "${YELLOW}[DRY-RUN]${NC} 安装 $LOGROTATE_DIR/research-app（rotate=$LOG_ROTATE_DAYS）"
   else
     mkdir -p "$LOGROTATE_DIR"
-    sed "s|__APP_BASE__|$INSTALL_ROOT|g; s|__SERVICE_USER__|$SERVICE_USER|g" \
+    sed "s|__APP_BASE__|$INSTALL_ROOT|g; s|__SERVICE_USER__|$SERVICE_USER|g; s|rotate 14|rotate $LOG_ROTATE_DAYS|g" \
       "$LR_SRC" > "$LOGROTATE_DIR/research-app"
     # 语法校验（logrotate -d 为 dry-run）
     if logrotate -d "$LOGROTATE_DIR/research-app" >/dev/null 2>&1; then
-      echo "  ✅ 日志轮转已安装且语法正确（保留 14 份，按天）"
+      echo "  ✅ 日志轮转已安装且语法正确（保留 $LOG_ROTATE_DAYS 份，按天）"
     else
       warn "logrotate 配置语法校验未通过，请手工检查 $LOGROTATE_DIR/research-app"
     fi

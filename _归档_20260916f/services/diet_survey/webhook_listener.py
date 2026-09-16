@@ -1,0 +1,197 @@
+#!/usr/bin/env python3
+"""
+Diet Survey Webhook Listener v2
+================================
+Receives POST callbacks from wj.sjtu.edu.cn and:
+  1. Stores dietary records in SQLite
+  2. Calls LLM to generate dietary advice (non-blocking background thread)
+  3. Sends email with advice
+
+Usage:
+    python3 webhook_listener.py [port]
+
+Default port: 9876
+"""
+
+import json
+import sys
+import os
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from datetime import datetime
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from diet_database import store_submission, update_submission_advice, get_conn
+
+
+class DietWebhookHandler(BaseHTTPRequestHandler):
+
+    def do_POST(self):
+        content_length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(content_length)
+
+        try:
+            callback_data = json.loads(body.decode("utf-8"))
+            # Step 1: Store in database (synchronous)
+            db_id, student_id, email, is_first = store_submission(callback_data)
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            print(f"[{now}] ✓ Stored: student={student_id} email={email} "
+                  f"db_id={db_id} first={is_first}")
+
+            # Step 2: Extract diet info for task queue
+            diet_desc = ""
+            record_date = ""
+            submission_id = None
+            for sheet in callback_data.get("answer_sheet", []):
+                submission_id = str(sheet.get("id", ""))
+                for item in sheet.get("answers", []):
+                    title = item.get("question", {}).get("title", "")
+                    ans = str(item.get("answer", ""))
+                    if "记录日期" in title: record_date = ans
+                    if "饮食" in title or "描述" in title: diet_desc = ans
+
+            # Step 3: Enqueue LLM task (persistent queue, sequential processing)
+            import diet_llm_queue
+            diet_llm_queue.enqueue_task(db_id, student_id, diet_desc, record_date, submission_id, email)
+            print(f"[{now}]   → LLM task enqueued (persistent queue)")
+
+            # Step 3: Return OK immediately
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "status": "ok",
+                "requestId": db_id,
+                "timestamp": datetime.now().isoformat()
+            }).encode("utf-8"))
+
+        except Exception as e:
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            print(f"[{now}] ✗ Error: {e}")
+            import traceback
+            traceback.print_exc()
+            self.send_response(500)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "status": "error",
+                "message": str(e)
+            }).encode("utf-8"))
+
+    def do_GET(self):
+        if self.path in ("/health", "/healthz", "/ping"):
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "status": "ok",
+                "service": "diet-webhook-v2",
+                "pid": os.getpid(),
+                "time": datetime.now().isoformat(timespec="seconds"),
+            }).encode("utf-8"))
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def _run_llm_and_email(self, db_id, student_id, email, callback_data):
+        """Background: call LLM → store advice → send email."""
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        try:
+            # Extract diet description and record date
+            diet_desc = ""
+            record_date = ""
+            answer_sheet = callback_data.get("answer_sheet", [])
+            for sheet in answer_sheet:
+                for item in sheet.get("answers", []):
+                    q = item.get("question", {})
+                    title = q.get("title", "")
+                    ans = item.get("answer", "")
+                    ans_text = str(ans) if not isinstance(ans, dict) else ans.get("label", str(ans))
+                    if "记录日期" in title:
+                        record_date = ans_text
+                    if "饮食" in title or "描述" in title:
+                        diet_desc = ans_text
+
+            # Call LLM
+            print(f"[{now_str}] 🧠 LLM analyzing for student={student_id}...")
+            from diet_llm import generate_dietary_advice, update_submission_with_advice
+
+            # Get submission_id for this record
+            submission_id = None
+            for sheet in answer_sheet:
+                sid = sheet.get("id")
+                if sid:
+                    submission_id = str(sid)
+                    break
+
+            result = generate_dietary_advice(
+                student_id=student_id,
+                current_diet_desc=diet_desc,
+                current_record_date=record_date,
+                submission_id=submission_id,
+            )
+
+            if "error" in result:
+                print(f"[{now_str}] ⚠ LLM failed: {result['error']}")
+                return
+
+            # Store advice
+            update_submission_with_advice(db_id, result)
+            print(f"[{now_str}] ✅ Advice stored for db_id={db_id} "
+                  f"({result.get('tokens_used', '?')} tokens)")
+
+            # Send email (if email available and advice exists)
+            if email:
+                # Get full record with advice
+                conn = get_conn()
+                full_record = conn.execute(
+                    "SELECT * FROM submissions WHERE id = ?", (db_id,)
+                ).fetchone()
+                conn.close()
+
+                if full_record:
+                    from diet_email_feedback import send_immediate
+                    record_dict = dict(full_record)
+                    item_id = send_immediate(
+                        recipient=email,
+                        submission_id=submission_id or "",
+                        record=record_dict,
+                    )
+                    if item_id:
+                        print(f"[{now_str}] 📧 Email sent to {email}")
+                    else:
+                        print(f"[{now_str}] ⚠ Email failed for {email}")
+
+        except Exception as e:
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            print(f"[{now_str}] ❌ Background LLM/email error: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def log_message(self, fmt, *args):
+        msg = " ".join(str(a) for a in args) if args else ""
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
+
+
+def main():
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else 9876
+    server = HTTPServer(("0.0.0.0", port), DietWebhookHandler)
+    print("=" * 50)
+    print("  Diet Survey Webhook Listener v2")
+    print(f"  🚀 Port {port}")
+    print(f"  📥 POST / → receive, store, analyze, email")
+    print(f"  ❤️  GET /health → health check")
+    print(f"  🧠 LLM analysis: background (non-blocking)")
+    print(f"  📧 Email: auto-send after advice generated")
+    print("=" * 50)
+    print()
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nShutting down...")
+        server.shutdown()
+        server.server_close()
+
+
+if __name__ == "__main__":
+    main()

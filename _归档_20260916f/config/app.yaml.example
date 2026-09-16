@@ -1,0 +1,165 @@
+# ============================================================================
+#  个性化饮食干预课题 — 服务器端研究系统  统一配置（单一入口）
+# ============================================================================
+#  本文件是**所有可配置项的唯一真源**。安装脚本会把它复制到
+#      /etc/research-app/app.yaml
+#  再由 tools/render_env.py 渲染出 systemd 使用的环境文件
+#      /etc/research-app/env
+#
+#  规则：
+#    1. 真实密钥**不写在本文件**。凡 `"${VAR}"` 形式者，运行期从
+#       /etc/research-app/secrets.env（0600）或进程环境变量解析。
+#    2. 占位符（__CHANGE_ME__ / <...> / example.com）在启动自检中会被判为「未配置」。
+#    3. 校验：`python3 tools/appconfig.py --check`（启动即校验；缺项/类型错/占位符 → 报错并指出位置）
+#    4. 本文件随仓库发布；真实配置（/etc/research-app/app.yaml 与 secrets.env）不入库。
+# ============================================================================
+
+version: 1
+
+# ── 1. 应用与路径 ──────────────────────────────────────────────────────────
+app:
+  base_dir: /opt/gutbrainaxis          # 必填·安装前缀
+  data_dir: /opt/gutbrainaxis/data     # 数据导出/中间产物
+  log_dir: /opt/gutbrainaxis/logs      # 日志目录（配合 logrotate）
+  log_level: INFO                      # DEBUG|INFO|WARNING|ERROR
+  timezone: Asia/Shanghai
+  # 计分口径：3.0-native-options（权威，推荐）｜3.0-native-ordinal（同义旧键名）
+  #           ｜2.0-official-rules（历史兼容，已废止）
+  scoring_version: 3.0-native-options
+
+# ── 2. 站点与反向代理 ──────────────────────────────────────────────────────
+site:
+  domain: example.com                  # 必填·部署时改为真实域名（占位符会被告警）
+  public_scheme: https                 # http|https
+  nginx_sites_dir: /etc/nginx/sites-available
+  nginx_enabled_dir: /etc/nginx/sites-enabled
+  nginx_log_dir: /var/log/nginx
+
+# ── 3. 各服务监听端口与入口 ────────────────────────────────────────────────
+services:
+  survey_feedback:
+    port: 8000
+    port_alt: 8080                     # 兼容监听（可留空）
+    dir: sjtu_survey_pro
+    entry: feedback_server.py
+    enabled: true
+  diet_feedback:
+    port: 8001
+    dir: diet_survey
+    entry: diet_feedback_server.py
+    enabled: true
+  diet_webhook:
+    port: 9876
+    dir: diet_survey
+    entry: webhook_listener.py
+    enabled: true
+  diet_llm_queue:
+    port: 0                            # 0 = 无监听端口（常驻 worker）
+    dir: diet_survey
+    entry: diet_llm_queue.py
+    enabled: true
+  admin_console:
+    port: 9000
+    host: 127.0.0.1                    # 建议保持仅内网/本机
+    dir: admin_console
+    entry: app.py
+    enabled: true
+  data_dashboard:
+    port: 8090
+    dir: data_dashboard
+    entry: app.py
+    enabled: true
+
+# ── 4. 数据库与数据文件 ────────────────────────────────────────────────────
+database:
+  survey_db: /opt/gutbrainaxis/sjtu_survey_pro/survey_data.db
+  diet_db: /opt/gutbrainaxis/diet_survey/diet_data.db
+  exercise_db: /opt/gutbrainaxis/exercise_survey/exercise_data.db
+  roster: /opt/gutbrainaxis/data_dashboard/roster.json
+
+# ── 5. SMTP（问卷反馈 / 饮食反馈 / 每日报告 共用）───────────────────────────
+smtp:
+  use_ssl: true                        # true=465/SSL；false=25/明文或STARTTLS
+  host: mail.sjtu.edu.cn
+  port: 25
+  ssl_host: mail.sjtu.edu.cn
+  ssl_port: 465
+  username: ${SMTP_USERNAME}           # 必填·密钥
+  password: ${SMTP_PASSWORD}           # 必填·密钥
+  sender_email: ${SMTP_SENDER_EMAIL}   # 必填·密钥
+  sender_name: Research Feedback System
+  admin_email: ${SMTP_ADMIN_EMAIL}     # 必填·告警/日报收件人
+  cc_email: ""                         # 可选·日报抄送
+
+# ── 6. 告警邮件（scripts/send_alert.py / health_monitor.py）────────────────
+alert:
+  host: mail.sjtu.edu.cn
+  port: 465
+  use_ssl: true
+  username: ${ALERT_SMTP_USERNAME}
+  password: ${ALERT_SMTP_PASSWORD}
+  sender_email: ${ALERT_FROM}
+  sender_name: Research Task Monitor
+  to: ${ALERT_TO}
+  cooldown_minutes: 15                 # 同一告警去重冷却
+
+# ── 7. LLM（主 + 备）──────────────────────────────────────────────────────
+# 密钥一律用**未加引号的 ${VAR} 引用**：
+#   · YAML 中 ${...} 是合法 plain scalar，同样会被 appconfig 解析为引用；
+#   · 不加引号可避免被发布前脱敏扫描器误判为「硬编码 api_key 赋值」。
+# ⚠️ 绝不在此写入真实密钥。
+llm:
+  primary:
+    base_url: https://models.sjtu.edu.cn/api/v1
+    model: deepseek-reasoner
+    api_keys: ${LLM_API_KEYS}          # 逗号分隔，支持多 Key 轮换
+    timeout_seconds: 120
+    max_retries: 3
+  backup:
+    enabled: true
+    base_url: https://api.deepseek.com
+    model: deepseek-v4-flash
+    api_key: ${LLM_BACKUP_API_KEY}
+    timeout_seconds: 120
+
+# ── 8. 三个问卷平台（令牌 + 分页 + 拉取周期）──────────────────────────────
+survey_platforms:
+  scale:
+    token: ${WJX_SURVEY_TOKEN}
+    page_size: 50
+    fetch_interval_minutes: 60
+  diet:
+    token: ${WJX_DIET_TOKEN}
+    page_size: 10
+    fetch_interval_minutes: 15
+  exercise:
+    token: ${WJX_EXERCISE_TOKEN}
+    page_size: 50
+    fetch_interval_minutes: 15
+
+# ── 9. 调度周期（install.sh 用它渲染 systemd timer）───────────────────────
+schedule:
+  survey_sync_minutes: 60
+  diet_sync_minutes: 15
+  exercise_sync_minutes: 15
+  health_monitor_minutes: 30
+  daily_report_at: "08:30"             # 每日报告（HH:MM，本地时区）
+  backup_at: "03:00"                   # 每日备份
+
+# ── 10. 备份策略 ──────────────────────────────────────────────────────────
+backup:
+  enabled: true
+  dir: /opt/gutbrainaxis/backups
+  retention: 14                        # 保留最近 N 份
+  remote_enabled: false                # 是否 rclone 上传远端
+  rclone_remote: ""                    # 例：onedrive:opt-backup
+  rclone_log: /var/log/rclone-backup.log
+
+# ── 11. 自检（tools/selfcheck.py 与控制台「自检」页共用）──────────────────
+selfcheck:
+  enabled: true
+  http_timeout_seconds: 5
+  external_probe: true                 # 是否探测问卷 API / SMTP / LLM 可达性
+  external_probe_interval_seconds: 7   # 外部探测间隔（限流保护，勿调小）
+  db_write_test: true                  # 数据库写测试（回滚，不留痕）
+  min_free_disk_gb: 2

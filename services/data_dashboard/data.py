@@ -9,7 +9,53 @@ import sqlite3
 import json
 import statistics
 import os
+import sys
 from datetime import datetime, timedelta
+
+# 研究设计参数（干预时间轴/周次/目标完成度/名册规则）——单一真源
+# 此前 SCALE_TASKS / EXERCISE_TASKS / DIET_* / 248 / 学号前缀 都是硬编码，
+# 换课题或换学期就要改代码；现改为读 config/study_calendar.example.yaml
+# （路径可配：app.yaml → study.calendar_path）。缺文件时回退内置默认值（= 原硬编码值）。
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                "common"))
+try:
+    import lib_study as _LS
+except Exception:                                            # pragma: no cover
+    class _LS:                                               # type: ignore
+        DEFAULT_CALENDAR = {}
+
+        @staticmethod
+        def load_calendar(cfg=None, path=None):
+            return {}
+
+        @staticmethod
+        def diet_date_labels(cal=None):
+            return []
+
+        @staticmethod
+        def is_planned(student_id, cfg=None):
+            return str(student_id or "").startswith(("5", "1"))
+
+        @staticmethod
+        def total_planned_fallback(cfg=None):
+            return 248
+
+        @staticmethod
+        def planned_id_prefixes(cfg=None):
+            return ("5", "1")
+
+        @staticmethod
+        def completion_targets(cal=None):
+            return {}
+
+
+try:
+    import lib_schedule as _SCH
+    _CFG = _SCH.load_config()
+except Exception:                                            # pragma: no cover
+    _CFG = {}
+
+_CAL = _LS.load_calendar(_CFG)
 
 _BASE = os.environ.get('APP_BASE', '/opt')
 SURVEY_DB = os.environ.get('SURVEY_DB', os.path.join(_BASE, 'sjtu_survey_pro', 'survey_data.db'))
@@ -216,27 +262,17 @@ def load_roster():
 # =========================================================================
 
 # ── Scale completion ──────────────────────────────────────────────────
-SCALE_TASKS = [
-    {"name": "第1次量表", "deadline": "2026-07-06", "window_start": "2026-07-03",
-     "window_end": "2026-07-13", "extended_end": "2026-07-13"},
-    {"name": "第2次量表", "deadline": "2026-07-15", "window_start": "2026-07-12",
-     "window_end": "2026-07-18"},
-    {"name": "第3次量表", "deadline": "2026-07-27", "window_start": "2026-07-24",
-     "window_end": "2026-07-30"},
-]
+# 轮次与窗口来自研究设计日历（可配）；变量名保留，兼容既有调用点。
+SCALE_TASKS = list(_CAL.get("scale_rounds") or [])
+EXERCISE_TASKS = list(_CAL.get("exercise_rounds") or [])
 
-EXERCISE_TASKS = [
-    {"name": "第1次运动", "deadline": "2026-07-13", "window_start": "2026-07-10",
-     "window_end": "2026-07-16"},
-    {"name": "第2次运动", "deadline": "2026-07-20", "window_start": "2026-07-17",
-     "window_end": "2026-07-23"},
-    {"name": "第3次运动", "deadline": "2026-07-27", "window_start": "2026-07-24",
-     "window_end": "2026-07-30"},
-]
-
-DIET_START = "2026-07-06"
-DIET_END = "2026-07-29"
-DIET_MAX_SCORE = 22
+DIET_START = str(_CAL.get("diet_start") or "")
+DIET_END = str(_CAL.get("diet_end") or "")
+DIET_MAX_SCORE = int((_CAL.get("completion") or {}).get("diet_max") or 22)
+# 饮食打卡日期标签（completion 页列头），由日历推导
+DIET_DATE_LABELS = _LS.diet_date_labels(_CAL)
+# 目标完成度口径（前端赋分说明与阈值判断共用）
+COMPLETION_TARGETS = _LS.completion_targets(_CAL)
 
 
 def check_scale_completion(student_id):
@@ -613,7 +649,7 @@ def get_dashboard_summary():
     conn.close()
 
     roster = load_roster()
-    total_planned = len(roster) if roster else 248
+    total_planned = len(roster) if roster else _LS.total_planned_fallback(_CFG)
 
     dates = []
     if survey_dr[0]: dates.append(str(survey_dr[0])[:10])
@@ -947,7 +983,7 @@ def get_student_status(student_id):
     exercise_cnt = cur.fetchone()[0]
     conn.close()
 
-    is_planned = str(student_id).startswith('5') or str(student_id).startswith('1')
+    is_planned = _LS.is_planned(student_id, _CFG)
     if survey_cnt == 0:
         status = '未开始'
     elif survey_cnt >= 4:
@@ -1093,7 +1129,7 @@ def get_student_overview(student_id):
     info['exercise_count'] = cur.fetchone()[0]
     conn.close()
 
-    info['is_planned'] = str(student_id).startswith('5') or str(student_id).startswith('1')
+    info['is_planned'] = _LS.is_planned(student_id, _CFG)
     if len(submissions) >= 4: info['status'] = '已完成'
     elif len(submissions) > 0: info['status'] = '进行中'
     else: info['status'] = '未开始'

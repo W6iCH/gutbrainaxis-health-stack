@@ -1,0 +1,72 @@
+# ============================================================================
+#  研究设计日历（部署个性化）— 干预时间轴 / 周次切点 / 目标完成度
+# ============================================================================
+#  安装位置：由 app.yaml 的 `study.calendar_path` 指定（默认
+#            /etc/research-app/study_calendar.yaml）
+#  读取入口：services/common/lib_study.py（有内置默认值；本文件缺失不报错）
+#  校验：python3 tools/appconfig.py --check（本文件由 appconfig 一并校验）
+#
+#  ⚠️ 本文件随仓库发布（示例值）；真实部署可自由修改，不影响计分口径，
+#     只影响「窗口/完成度展示/人群基线周次划分」。
+# ============================================================================
+
+# ── 研究起止（整体）─────────────────────────────────────────────────────
+study_start: "2026-07-06"
+study_end: "2026-07-29"
+
+# ── 量表轮次（deadline=应完成日；window=开放窗口；extended_end=补交截止）──
+scale_rounds:
+  - name: 第1次量表
+    deadline: "2026-07-06"
+    window_start: "2026-07-03"
+    window_end: "2026-07-13"
+    extended_end: "2026-07-13"      # 第 1 次量表延长至 7/13
+  - name: 第2次量表
+    deadline: "2026-07-15"
+    window_start: "2026-07-12"
+    window_end: "2026-07-18"
+  - name: 第3次量表
+    deadline: "2026-07-27"
+    window_start: "2026-07-24"
+    window_end: "2026-07-30"
+
+# ── 运动打卡轮次 ────────────────────────────────────────────────────────
+exercise_rounds:
+  - name: 第1次运动
+    deadline: "2026-07-13"
+    window_start: "2026-07-10"
+    window_end: "2026-07-16"
+  - name: 第2次运动
+    deadline: "2026-07-20"
+    window_start: "2026-07-17"
+    window_end: "2026-07-23"
+  - name: 第3次运动
+    deadline: "2026-07-27"
+    window_start: "2026-07-24"
+    window_end: "2026-07-30"
+
+# ── 饮食打卡（整段每日 1 次）─────────────────────────────────────────────
+diet_start: "2026-07-06"
+diet_end: "2026-07-29"
+
+# ── 周次（时点）切点：人群基线与分析共用 ────────────────────────────────
+waves:
+  t0_end: "2026-07-10"               # ≤ 该日 → T0（W1）
+  t1_end: "2026-07-21"               # ≤ 该日 → T1（W2）；其后 → T2（W3）
+
+# ── 目标完成度（赋分口径）───────────────────────────────────────────────
+completion:
+  scale_rounds: 3                    # 量表应完成次数
+  scale_points_per_round: 1
+  scale_max: 10                      # 量表满分（3 次全部完成 10 分）
+  exercise_rounds: 3                 # 运动应打卡次数
+  exercise_points_per_round: 1
+  exercise_max: 3
+  diet_days: 22                      # 饮食应打卡天数
+  diet_points_per_day: 1
+  diet_max: 22
+  total_max: 35                      # 总分上限（量表 10 + 运动 3 + 饮食 22）
+  green_threshold: 0.85              # ≥85% → 已完成（绿）
+  yellow_threshold: 0.5              # ≥50% → 进行中（黄）
+  grace_days: 3                      # 截止日 ±N 天内提交计入
+  scale_first_extended: "2026-07-13" # 第 1 次量表延长截止日

@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}数据质量{% endblock %}
+{% block extra_head %}
+<style>
+.quality-table td, .quality-table th { font-size: 13px; }
+.warn-cell { color: #e67e22; font-weight: 600; }
+.bad-cell { color: #e74c3c; font-weight: 600; }
+.ok-cell { color: #27ae60; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>数据质量</h1>
+    <p class="page-subtitle">缺失项 / 异常值 / 重复提交 / 未映射条目 | 更新时间：{{ update_time }}
+        <button onclick="loadQuality()" class="btn btn-sm" style="margin-left:8px;">刷新</button>
+        <a href="/api/export/quality?format=csv" class="btn btn-sm" style="margin-left:4px;">导出 CSV</a>
+    </p>
+</div>
+
+<div class="stat-cards" id="qCards"></div>
+
+<div class="grid-3" style="margin-bottom:18px;">
+    <div class="card"><div class="card-header"><h3>缺失项（各库）</h3></div>
+        <div class="card-body" style="overflow-x:auto;"><table class="data-table quality-table" id="missTable"></table></div></div>
+    <div class="card"><div class="card-header"><h3>异常值（超出量程）</h3></div>
+        <div class="card-body" style="overflow-x:auto;"><table class="data-table quality-table" id="outlierTable"></table></div></div>
+    <div class="card"><div class="card-header"><h3>重复提交</h3></div>
+        <div class="card-body" style="overflow-x:auto;"><table class="data-table quality-table" id="dupTable"></table></div></div>
+</div>
+
+<div class="card">
+    <div class="card-header"><h3>未映射条目 / 模拟数据残留</h3></div>
+    <div class="card-body" id="unmappedBox" style="font-size:13px;line-height:2;"></div>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+function tbl(el, headers, rows) {
+    var h = '<thead><tr>' + headers.map(function(x){return '<th>'+x+'</th>';}).join('') + '</tr></thead><tbody>';
+    rows.forEach(function(r){
+        h += '<tr>' + r.map(function(c){return '<td>'+c+'</td>';}).join('') + '</tr>';
+    });
+    document.getElementById(el).innerHTML = h + '</tbody>';
+}
+async function loadQuality() {
+    var r = await fetch('/api/quality'); var d = await r.json();
+    if (d.error) { alert('加载失败: ' + d.error); return; }
+
+    // 汇总卡
+    var totalOutliers = 0, totalDup = 0;
+    Object.values(d.outliers||{}).forEach(function(v){ (v||[]).forEach(function(o){ totalOutliers += o.count||0; }); });
+    Object.values(d.duplicates||{}).forEach(function(v){ totalDup += (v.duplicate_groups||0); });
+    var unmapped = (d.unmapped && d.unmapped.survey && d.unmapped.survey.count) || 0;
+    var residue = d.mock_residue || {};
+    document.getElementById('qCards').innerHTML =
+        '<div class="stat-card"><div class="stat-label">异常值合计</div><div class="stat-value">' + totalOutliers + '</div><div class="stat-detail">超出量程的评分/数值</div></div>' +
+        '<div class="stat-card"><div class="stat-label">重复提交组</div><div class="stat-value">' + totalDup + '</div><div class="stat-detail">同一 submission_id 多行</div></div>' +
+        '<div class="stat-card"><div class="stat-label">未映射条目</div><div class="stat-value">' + unmapped + '</div><div class="stat-detail">计分引擎未识别的题干</div></div>' +
+        '<div class="stat-card"><div class="stat-label">模拟数据残留</div><div class="stat-value" style="color:' + (residue.clean ? '#27ae60' : '#e74c3c') + '">' + (residue.clean ? '无' : '有') + '</div><div class="stat-detail">MOCK- 前缀记录</div></div>';
+
+    // 缺失
+    var mrows = [];
+    Object.keys(d.missing||{}).forEach(function(scope){
+        Object.keys(d.missing[scope]||{}).forEach(function(k){
+            var v = d.missing[scope][k];
+            var cls = (typeof v === 'number' && v > 0) ? 'warn-cell' : 'ok-cell';
+            mrows.push([scope, k, '<span class="'+cls+'">'+v+'</span>']);
+        });
+    });
+    tbl('missTable', ['库', '字段', '缺失数'], mrows);
+
+    // 异常值
+    var orows = [];
+    Object.keys(d.outliers||{}).forEach(function(scope){
+        (d.outliers[scope]||[]).forEach(function(o){
+            orows.push([scope, o.field, '<span class="bad-cell">'+o.count+'</span>', o.expected]);
+        });
+    });
+    tbl('outlierTable', ['库', '字段', '异常数', '合理区间'], orows.length ? orows : [['—','无异常','0','—']]);
+
+    // 重复
+    var drows = [];
+    Object.keys(d.duplicates||{}).forEach(function(scope){
+        var v = d.duplicates[scope] || {};
+        drows.push([scope, (v.duplicate_groups||0), (v.missing_redirect_answer===undefined?'—':v.missing_redirect_answer)]);
+    });
+    tbl('dupTable', ['库', '重复组数', '缺 redirect_answer'], drows);
+
+    // 未映射 + 残留
+    var box = '';
+    box += '未映射条目（survey）：<b>' + unmapped + '</b><br>';
+    box += 'MOCK- 残留：survey=<b>' + (residue.survey) + '</b>，diet=<b>' + (residue.diet) + '</b>，exercise=<b>' + (residue.exercise) + '</b>　';
+    box += residue.clean ? '<span class="ok-cell">✅ 干净</span>' : '<span class="bad-cell">❌ 有残留，请运行 tools/clear_mock_data.py</span>';
+    document.getElementById('unmappedBox').innerHTML = box;
+}
+document.addEventListener('DOMContentLoaded', loadQuality);
+</script>
+{% endblock %}

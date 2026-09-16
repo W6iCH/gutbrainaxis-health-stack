@@ -21,8 +21,8 @@ case "${1:-all}" in
     echo ""
 
     # 1. Start webhook listener
-    echo "[1/3] 📥 启动 Webhook 监听服务 (端口 9876)..."
-    python3 webhook_listener.py 9876 &
+    echo "[1/3] 📥 启动 Webhook 监听服务 (端口 ${PORT_DIET_WEBHOOK:-9876})..."
+    python3 webhook_listener.py "${PORT_DIET_WEBHOOK:-9876}" &
     WH_PID=$!
     sleep 2
     if kill -0 "$WH_PID" 2>/dev/null; then
@@ -32,12 +32,12 @@ case "${1:-all}" in
     fi
 
     # 2. Start feedback server
-    echo "[2/3] 🚀 启动反馈页面服务器 (端口 8001)..."
-    python3 diet_feedback_server.py 8001 &
+    echo "[2/3] 🚀 启动反馈页面服务器 (端口 ${PORT_DIET_FEEDBACK:-8001})..."
+    python3 diet_feedback_server.py "${PORT_DIET_FEEDBACK:-8001}" &
     FB_PID=$!
     sleep 2
-    if curl -sf http://localhost:8001/ping > /dev/null 2>&1; then
-        echo "  ✅ Feedback server running on :8001 (PID: $FB_PID)"
+    if curl -sf "http://localhost:${PORT_DIET_FEEDBACK:-8001}/ping" > /dev/null 2>&1; then
+        echo "  ✅ Feedback server running on :${PORT_DIET_FEEDBACK:-8001} (PID: $FB_PID)"
     else
         echo "  ⚠ Feedback server may have failed"
     fi
@@ -89,13 +89,13 @@ case "${1:-all}" in
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
     if curl -sf http://localhost:9876/health > /dev/null 2>&1; then
-        echo "  📥 Webhook:    ✅ Running (:9876)"
+        echo "  📥 Webhook:    ✅ Running (:${PORT_DIET_WEBHOOK:-9876})"
     else
         echo "  📥 Webhook:    ❌ Not running"
     fi
 
     if curl -sf http://localhost:8001/ping > /dev/null 2>&1; then
-        echo "  🌐 Feedback:   ✅ Running (:8001)"
+        echo "  🌐 Feedback:   ✅ Running (:${PORT_DIET_FEEDBACK:-8001})"
     else
         echo "  🌐 Feedback:   ❌ Not running"
     fi

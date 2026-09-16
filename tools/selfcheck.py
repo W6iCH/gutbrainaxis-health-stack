@@ -67,7 +67,8 @@ import appconfig as AC                                   # noqa: E402
 
 DEFAULT_UNITS_SERVICE = [
     "research-survey-feedback", "research-diet-feedback", "research-diet-webhook",
-    "research-diet-llm-queue", "research-admin-console", "research-data-dashboard",
+    "research-survey-webhook", "research-diet-llm-queue", "research-admin-console",
+    "research-data-dashboard",
 ]
 DEFAULT_UNITS_TIMER = [
     "research-survey-sync.timer", "research-diet-sync.timer",
@@ -88,7 +89,7 @@ REQUIRED_SCHEMA = {
 }
 
 GROUPS = ["platform", "config", "paths", "systemd", "ports", "http",
-          "database", "nginx", "external", "storage"]
+          "database", "nginx", "external", "storage", "webhook", "parity"]
 
 
 # ── 结果收集 ──────────────────────────────────────────────────────────────
@@ -231,6 +232,59 @@ def check_platform(R, cfg):
                f"未找到 {venv}/bin/python3（本地开发环境可忽略）")
 
 
+def _scan_env_reads(base_dirs) -> dict:
+    """扫描源码中 `os.environ.get("X")` 读取的环境变量名 → {name: [file:line]}。"""
+    import re as _re
+    pat = _re.compile(r'os\.environ(?:\.get)?\(?\s*[\[\'"]\s*([A-Z][A-Z0-9_]{2,})')
+    found: dict = {}
+    skip_dirs = {"__pycache__", "_归档"}
+    for base in base_dirs:
+        if not base or not os.path.isdir(base):
+            continue
+        for root, dirs, files in os.walk(base):
+            dirs[:] = [d for d in dirs
+                       if d not in skip_dirs and not d.startswith("_归档")]
+            for fn in files:
+                if not fn.endswith(".py"):
+                    continue
+                p = os.path.join(root, fn)
+                try:
+                    with open(p, encoding="utf-8", errors="replace") as f:
+                        for i, line in enumerate(f, 1):
+                            for m in pat.finditer(line):
+                                found.setdefault(m.group(1), []).append(
+                                    f"{os.path.relpath(p, PKG_DIR)}:{i}")
+                except OSError:
+                    continue
+    return found
+
+
+# 允许存在于代码但不属于 app.yaml 的环境变量（系统/运行时/兼容/历史别名）
+# 说明：下列项要么是**系统/运行时**变量（PATH/HOME…），要么是**服务内部**变量
+# （状态目录、调试开关、派生路径），要么是**已声明键的历史别名**
+# （如 SURVEY_ID → WJX_SURVEY_ID、SURVEY_WEBHOOK_SECRET → WEBHOOK_SECRET）。
+# 它们不需要部署个性化配置，因此不强制进 app.yaml。
+ENV_BRIDGE_ALLOW = {
+    "APP_BASE", "TZ", "PATH", "HOME", "USER", "LANG", "LC_ALL", "PYTHONPATH",
+    "RESEARCH_APP_CONFIG", "RESEARCH_APP_SECRETS", "STUDY_CALENDAR",
+    "RESEARCH_STUDY_CALENDAR", "DRY_RUN", "HEALTH_STATE_FILE", "LOG_DIR",
+    "CONFIG_DIR", "NGINX_SITES_DIR", "NGINX_ENABLED_DIR", "SYSTEMD_DIR",
+    "ENV_FILE", "SANDBOX_ROOT", "DATA_DIR", "BACKUP_DIR", "RETENTION",
+    "BACKUP_LOG", "RCLONE_REMOTE", "SECRET_KEY", "CONSOLE_PORT", "CONSOLE_HOST",
+    "CONSOLE_API_KEYS", "CONSOLE_COOKIE_SECURE", "CONSOLE_COOKIE_SAMESITE",
+    "CONSOLE_LOCKOUT_THRESHOLD", "CONSOLE_LOCKOUT_WINDOW_SECONDS",
+    "CONSOLE_LOCKOUT_SECONDS", "GBA_QUEUE_DIR", "LLM_QUEUE_DIR",
+    # —— 服务内部 / 派生路径 ——
+    "DIET_APP_DIR", "SURVEY_APP_DIR", "EXERCISE_APP_DIR", "VENV_DIR",
+    "SURVEY_WEBHOOK_STATE_DIR", "WEBHOOK_VERBOSE", "CHROME_USER_DATA",
+    # —— 已声明键的历史别名（保留向后兼容）——
+    "SURVEY_ID", "SURVEY_WEBHOOK_SECRET",
+    # —— health_monitor 的遗留覆盖项（已有 alert.stale_data_minutes 等价配置）——
+    "STALE_SURVEY_MINUTES", "STALE_DIET_MINUTES", "SYNC_MAX_GAP_MINUTES",
+    "LLM_QUEUE_MAX_PENDING",
+}
+
+
 def check_config(R, cfg, cfg_path):
     if cfg is None:
         R.fail("config.load", "config", "配置加载",
@@ -264,6 +318,64 @@ def check_config(R, cfg, cfg_path):
                "写入 /etc/research-app/secrets.env 后重启受影响服务")
     else:
         R.ok("config.secrets", "config", "密钥齐备", "全部密钥已提供")
+
+    # schema ↔ app.yaml.example 悬空键自检（“发布门禁”项）
+    try:
+        kerrs, _kw = AC.check_example_keys()
+        if kerrs:
+            R.fail("config.example_keys", "config", "schema 与 example 键一致",
+                   "；".join(kerrs[:3]) + (f"（共 {len(kerrs)} 条）" if len(kerrs) > 3 else ""),
+                   "修改 config/app.schema.json 或 config/app.yaml.example 使二者键集合一致")
+        else:
+            R.ok("config.example_keys", "config", "schema 与 example 键一致",
+                 f"{len(AC.SCHEMA_FIELDS)} 个键完全对应（无悬空键）")
+    except Exception as e:                                    # noqa: BLE001
+        R.fail("config.example_keys", "config", "schema 与 example 键一致",
+               str(e), "检查 config/ 下两个文件是否存在且格式正确")
+
+    # 时间项（C）：HH:MM 格式与窗口可解析性
+    try:
+        bad = []
+        for k in ("schedule.daily_report_at", "schedule.backup_at",
+                  "analysis.window_start", "analysis.window_end"):
+            v = cfg.get(k)
+            if v and AC.parse_hhmm(v) < 0:
+                bad.append(f"{k}={v!r}")
+        if bad:
+            R.fail("config.time_format", "config", "时间项格式（HH:MM）",
+                   "；".join(bad), "修正为 24 小时制 HH:MM，如 23:00")
+        else:
+            R.ok("config.time_format", "config", "时间项格式（HH:MM）", "全部合法")
+    except Exception as e:                                    # noqa: BLE001
+        R.skip("config.time_format", "config", "时间项格式（HH:MM）", str(e))
+
+    # 三方一致性：yaml → 实际读取（服务源码读的环境变量都必须在 ENV_MAP 中声明）
+    try:
+        declared = set(AC.ENV_MAP.values()) | set(AC.PORT_ENV_MAP.values()) | \
+            {"PORT_SURVEY_FEEDBACK_ALT"}
+        reads = _scan_env_reads([os.path.join(PKG_DIR, "services"),
+                                 os.path.join(PKG_DIR, "scripts"),
+                                 os.path.join(PKG_DIR, "tools")])
+        # 忽略明显非配置的环境变量（_KEY / _TOKEN 等由 ENV_MAP 已覆盖）
+        unknown = {k: v for k, v in reads.items()
+                   if k not in declared
+                   and k not in ENV_BRIDGE_ALLOW
+                   and not k.startswith("PYTEST")
+                   and not k.startswith("LC_")
+                   and not k.startswith("MOCK")
+                   and not k.startswith("GBA_TEST")
+                   and not k.startswith("WJX_")      # WX_* 在 schema 中已声明 token
+                   and not k.startswith("SMTP_")}
+        if unknown:
+            sample = "; ".join(f"{k}（{v[0]}）" for k, v in list(unknown.items())[:5])
+            R.fail("config.env_bridge", "config", "配置↔实际读取一致",
+                   f"{len(unknown)} 个环境变量被代码读取但未在 app.schema.json/ENV_MAP 中声明：{sample}",
+                   "把该配置项加入 app.schema.json + app.yaml.example + tools/appconfig.py 的 ENV_MAP")
+        else:
+            R.ok("config.env_bridge", "config", "配置↔实际读取一致",
+                 f"{len(declared)} 个已声明环境变量覆盖全部服务侧读取（{len(reads)} 个）")
+    except Exception as e:                                    # noqa: BLE001
+        R.skip("config.env_bridge", "config", "配置↔实际读取一致", str(e))
 
 
 def check_paths(R, cfg):
@@ -581,6 +693,93 @@ def check_external(R, cfg):
                    f"{bhost}:{bport} 不可达", "校验 base_url/出网；备份通道用于主通道失败时")
 
 
+def check_webhook(R, cfg):
+    """Webhook 回调健康（A）：模式、最近回调、重试积压；未启用时 skip。"""
+    enabled = bool(cfg.get("webhook.enabled", True))
+    svc_enabled = bool((cfg.get("services.survey_webhook") or {}).get("enabled", True))
+    if not enabled or not svc_enabled:
+        R.skip("webhook.disabled", "webhook", "量表 Webhook",
+               "配置中已关闭（仅用定时拉取）",
+               "如需低延迟，在 app.yaml 开启 webhook.enabled 与 services.survey_webhook.enabled")
+        return
+    port = int((cfg.get("services.survey_webhook") or {}).get("port") or 9877)
+    base = cfg.get("app.base_dir") or ""
+    state_file = os.path.join(base, "sjtu_survey_pro", ".webhook_queue", "state.json") \
+        if base else ""
+    threshold = int(cfg.get("webhook.timer_only_after_minutes") or 180)
+
+    if not state_file or not os.path.exists(state_file):
+        R.skip("webhook.state", "webhook", "Webhook 回调日志",
+               "尚未收到过回调（依赖定时拉取，属正常起始态）",
+               "按 docs/Webhook配置与验证.md 在平台侧配置推送地址，并提交一份测试答卷验证")
+        return
+    try:
+        with open(state_file, encoding="utf-8") as f:
+            st = json.load(f) or {}
+        last = st.get("last_received_at")
+        if not last:
+            R.skip("webhook.state", "webhook", "Webhook 回调日志",
+                   "状态文件存在但无有效回调时间", "提交测试答卷后重查")
+            return
+        idle_min = (datetime.now() - datetime.fromisoformat(last)).total_seconds() / 60
+        if idle_min > threshold:
+            R.fail("webhook.stale", "webhook", "Webhook 回调时效",
+                   f"已 {int(idle_min)} 分钟无回调（阈值 {threshold}）",
+                   "系统已自动回落定时拉取（数据不丢）；检查平台推送配置 / Nginx 反代 / 端口监听")
+        else:
+            R.ok("webhook.stale", "webhook", "Webhook 回调时效",
+                 f"最近回调 {int(idle_min)} 分钟前；累计 {st.get('received_total', 0)} 次，"
+                 f"新增 {st.get('new_rows_total', 0)} 行")
+        retry_n = len([x for x in os.listdir(os.path.join(os.path.dirname(state_file), "retry"))
+                       if x.endswith(".json")]) \
+            if os.path.isdir(os.path.join(os.path.dirname(state_file), "retry")) else 0
+        if retry_n:
+            R.fail("webhook.retry", "webhook", "Webhook 重试积压",
+                   f"{retry_n} 个待重试事件",
+                   "检查问卷平台 API 可达性与 WX_SURVEY_TOKEN；重试会自动退避")
+        else:
+            R.ok("webhook.retry", "webhook", "Webhook 重试积压", "无积压")
+    except Exception as e:                                    # noqa: BLE001
+        R.fail("webhook.state", "webhook", "Webhook 回调日志", str(e),
+               "删除损坏的 state.json 后重启 survey-webhook 服务")
+
+
+def check_parity(R, cfg):
+    """
+    计分口径一致性（用户硬性要求）：程序内计分 ⟷ 课题权威条目库**逐条相同**。
+
+    权威库（`14_评分标准/03_条目库_修正/survey_scoring_native.py`）只在**仓库内**存在，
+    生产服务器上不存在 → 本项在服务器上为 `skip`（不算失败）。
+    """
+    try:
+        sys.path.insert(0, HERE)
+        import verify_scoring_parity as VP                       # noqa: WPS433
+        res = VP.run()
+    except Exception as e:                                        # noqa: BLE001
+        R.skip("parity.run", "parity", "计分一致性验证", f"无法运行：{e}",
+               "在包含 14_评分标准/ 的仓库工作区运行以验证口径一致")
+        return
+    if res["status"] == "skipped":
+        R.skip("parity.authority", "parity", "计分一致性验证",
+               "权威条目库不在本机（生产服务器属正常）",
+               "在仓库工作区运行 tools/verify_scoring_parity.py 可做完整比对")
+        return
+    if res["status"] == "error":
+        R.fail("parity.run", "parity", "计分一致性验证", res["reason"],
+               "检查 tools/verify_scoring_parity.py 与计分模块路径")
+        return
+    if res["ok"]:
+        n = res["n_metadata_notes"]
+        R.ok("parity.compare", "parity", "计分一致性验证",
+             f"程序与权威条目库逐条相同（{res['checked']} 项断言全等"
+             + (f"；另有 {n} 条元数据差异（不影响分数）" if n else "") + "）")
+    else:
+        first = res["diffs"][0] if res["diffs"] else {}
+        R.fail("parity.compare", "parity", "计分一致性验证",
+               f"发现 {res['n_diffs']} 处差异（例：{first.get('what','')}）",
+               "运行 python3 tools/verify_scoring_parity.py 查看逐条差异")
+
+
 def check_storage(R, cfg):
     min_gb = float(cfg.get("selfcheck.min_free_disk_gb", 2))
     for key, cid, title in (("app.log_dir", "disk.log", "日志盘余量"),
@@ -689,6 +888,10 @@ def run_all(cfg=None, cfg_path=None, only=None, skip=None, external=None) -> dic
         check_external(R, cfg)
     if want("storage"):
         check_storage(R, cfg)
+    if want("webhook"):
+        check_webhook(R, cfg)
+    if want("parity"):
+        check_parity(R, cfg)
 
     c = R.counts()
     return {

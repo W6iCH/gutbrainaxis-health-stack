@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}系统健康{% endblock %}
+{% block extra_head %}
+<style>
+.ok-dot { color:#27ae60; font-weight:700; }
+.bad-dot { color:#e74c3c; font-weight:700; }
+.detail { font-size:11px; color:#888; word-break:break-all; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>系统健康</h1>
+    <p class="page-subtitle">服务 /healthz + 端口监听 + 数据库状态聚合 | 更新时间：{{ update_time }}
+        <button onclick="loadHealth()" class="btn btn-sm" style="margin-left:8px;">刷新</button>
+        <a href="/api/export/system?format=csv" class="btn btn-sm" style="margin-left:4px;">导出 CSV</a>
+        <a href="/healthz" class="btn btn-sm" style="margin-left:4px;">本服务 /healthz</a>
+    </p>
+</div>
+
+<div class="stat-cards" id="hCards"></div>
+
+<div class="card" style="margin-bottom:18px;">
+    <div class="card-header"><h3>服务与端口</h3></div>
+    <div class="card-body" style="overflow-x:auto;"><table class="data-table" id="svcTable"></table></div>
+</div>
+
+<div class="card">
+    <div class="card-header"><h3>数据库</h3></div>
+    <div class="card-body" style="overflow-x:auto;"><table class="data-table" id="dbTable"></table></div>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+function tbl(el, headers, rows) {
+    var h = '<thead><tr>' + headers.map(function(x){return '<th>'+x+'</th>';}).join('') + '</tr></thead><tbody>';
+    rows.forEach(function(r){
+        h += '<tr>' + r.map(function(c){return '<td>'+c+'</td>';}).join('') + '</tr>';
+    });
+    document.getElementById(el).innerHTML = h + '</tbody>';
+}
+async function loadHealth() {
+    var r = await fetch('/api/system/health'); var d = await r.json();
+    if (d.error) { alert('加载失败: ' + d.error); return; }
+    var c = d.counts || {};
+    document.getElementById('hCards').innerHTML =
+        '<div class="stat-card ' + (d.status==='ok'?'stat-card-green':'') + '"><div class="stat-label">总体状态</div><div class="stat-value">' + (d.status==='ok'?'正常':'降级') + '</div><div class="stat-detail">检查时间 ' + d.generated_at + '</div></div>' +
+        '<div class="stat-card"><div class="stat-label">服务可达</div><div class="stat-value">' + (c.services_ok||0) + '/' + ((c.services_ok||0)+(c.services_fail||0)) + '</div><div class="stat-detail">HTTP /healthz 探活</div></div>' +
+        '<div class="stat-card"><div class="stat-label">数据库可读</div><div class="stat-value">' + (c.databases_readable||0) + '/' + (c.databases||0) + '</div><div class="stat-detail">只读连接测试</div></div>';
+
+    var rows = (d.services||[]).map(function(s){
+        var mark = s.healthy ? '<span class="ok-dot">✅ 正常</span>' : '<span class="bad-dot">❌ 异常</span>';
+        var det = s.probe && s.probe.error ? s.probe.error : (s.probe && s.probe.status ? ('status=' + s.probe.status) : '');
+        return [s.service, s.port, s.listening ? '监听中' : '未监听', mark, '<span class="detail">' + det + '</span>'];
+    });
+    tbl('svcTable', ['服务', '端口', '端口状态', '健康探针', '详情'], rows);
+
+    var drows = (d.databases||[]).map(function(x){
+        return [x.name, '<span class="detail">' + x.path + '</span>', x.exists ? '存在' : '缺失',
+                x.readable ? '<span class="ok-dot">可读</span>' : '<span class="bad-dot">不可读</span>',
+                '<span class="detail">' + ((x.tables||[]).join(', ')) + '</span>'];
+    });
+    tbl('dbTable', ['库', '路径', '文件', '可读性', '表'], drows);
+}
+document.addEventListener('DOMContentLoaded', loadHealth);
+setInterval(loadHealth, 30000);
+</script>
+{% endblock %}

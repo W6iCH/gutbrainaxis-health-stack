@@ -1,0 +1,14 @@
+# ────────────────────────────────────────────────────────────────────────────
+#  运动问卷同步定时器 — 每 15 分钟触发一次
+# ────────────────────────────────────────────────────────────────────────────
+[Unit]
+Description=Research Exercise Survey Sync Timer (every 15 min)
+Documentation=file://__APP_BASE__/docs/数据模型与存储.md
+
+[Timer]
+OnCalendar=*:0/15
+Persistent=true
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target

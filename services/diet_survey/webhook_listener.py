@@ -10,24 +10,62 @@ Receives POST callbacks from wj.sjtu.edu.cn and:
 Usage:
     python3 webhook_listener.py [port]
 
-Default port: 9876
+Port resolution: CLI arg > $PORT_DIET_WEBHOOK (rendered from app.yaml) > 9876
 """
 
 import json
 import sys
 import os
 import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import HTTPServer, BaseHTTPRequestHandler, ThreadingHTTPServer
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# 公共限流（单一真源）
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                 "common"))
+try:
+    from lib_ratelimit import SlidingWindowLimiter
+except Exception:                                            # pragma: no cover
+    class SlidingWindowLimiter:                              # type: ignore
+        def __init__(self, limit=60, window_seconds=60):
+            pass
+
+        def allow(self, key):
+            return True
+
 from diet_database import store_submission, update_submission_advice, get_conn
+
+# 入站防护参数（可由 app.yaml 渲染的环境变量覆盖）
+MAX_BODY_BYTES = int(os.environ.get("WEBHOOK_MAX_BODY_BYTES", "1048576"))
+RATE_LIMIT_PER_MINUTE = int(os.environ.get("WEBHOOK_RATE_LIMIT_PER_MINUTE", "120"))
+_LIMITER = SlidingWindowLimiter(RATE_LIMIT_PER_MINUTE, 60)
 
 
 class DietWebhookHandler(BaseHTTPRequestHandler):
 
+    def _json(self, code: int, obj: dict):
+        body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_POST(self):
-        content_length = int(self.headers.get("Content-Length", 0))
+        # 入站防护（E：健壮性）：请求体上限 + 单 IP 限流，避免平台重投风暴打垮服务
+        try:
+            content_length = int(self.headers.get("Content-Length", 0) or 0)
+        except ValueError:
+            return self._json(400, {"status": "error", "message": "bad content-length"})
+        if content_length > MAX_BODY_BYTES:
+            print(f"[{datetime.now():%H:%M:%S}] 拒绝超大请求体 {content_length}")
+            return self._json(413, {"status": "error", "message": "payload too large"})
+        ip = (self.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+              or self.client_address[0])
+        if not _LIMITER.allow(ip):
+            print(f"[{datetime.now():%H:%M:%S}] 限速拒绝 ip={ip}")
+            return self._json(429, {"status": "error", "message": "rate limited"})
         body = self.rfile.read(content_length)
 
         try:
@@ -174,8 +212,14 @@ class DietWebhookHandler(BaseHTTPRequestHandler):
 
 
 def main():
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 9876
-    server = HTTPServer(("0.0.0.0", port), DietWebhookHandler)
+    # 端口优先级：命令行参数 > PORT_DIET_WEBHOOK（由 app.yaml 渲染）> 9876
+    port = (int(sys.argv[1]) if len(sys.argv) > 1
+            else int(os.environ.get("PORT_DIET_WEBHOOK", "9876")))
+    # 多线程处理：避免单条慢请求阻塞后续回调（E：健壮性）
+    server = ThreadingHTTPServer(("0.0.0.0", port), DietWebhookHandler)
+    server.daemon_threads = True
+    server.allow_reuse_address = True
+    server.request_queue_size = 64
     print("=" * 50)
     print("  Diet Survey Webhook Listener v2")
     print(f"  🚀 Port {port}")

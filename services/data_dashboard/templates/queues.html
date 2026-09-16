@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}队列运行状况{% endblock %}
+{% block extra_head %}
+<style>
+.q-card { margin-bottom: 18px; }
+.q-num { font-size: 26px; font-weight: 700; }
+.q-num.green { color: #27ae60; } .q-num.red { color: #e74c3c; }
+.q-num.orange { color: #f39c12; } .q-num.gray { color: #7f8c8d; }
+.badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:12px; }
+.badge.ok { background:#e8f8f0; color:#27ae60; }
+.badge.wait { background:#fef5e7; color:#e67e22; }
+.badge.bad { background:#fdecea; color:#e74c3c; }
+.kv { font-size:13px; line-height:1.9; color:#555; }
+.kv b { color:#222; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>队列运行状况</h1>
+    <p class="page-subtitle">LLM 分析队列 / 邮件队列 / Webhook 回调的实时视图 | 更新时间：{{ update_time }}
+        <button onclick="loadQueues()" class="btn btn-sm" style="margin-left:8px;">刷新</button>
+        <a href="/api/export/queues?format=csv" class="btn btn-sm" style="margin-left:4px;">导出 CSV</a>
+    </p>
+</div>
+
+<div class="grid-3" style="margin-bottom:18px;">
+    <div class="card q-card"><div class="card-header"><h3>LLM 分析队列</h3></div>
+        <div class="card-body">
+            <div style="display:flex;gap:18px;flex-wrap:wrap;">
+                <div><div class="stat-label">待处理</div><div class="q-num orange" id="llmPending">-</div></div>
+                <div><div class="stat-label">处理中</div><div class="q-num" id="llmProc">-</div></div>
+                <div><div class="stat-label">已完成</div><div class="q-num green" id="llmDone">-</div></div>
+                <div><div class="stat-label">失败</div><div class="q-num red" id="llmFailed">-</div></div>
+            </div>
+            <div class="kv" style="margin-top:10px;">
+                调度模式：<b id="llmMode">-</b>
+                <span id="llmWaitBadge" class="badge wait" style="display:none;">等待窗口</span>
+                <br>窗口：<b id="llmWindow">-</b> ｜ 时区：<b id="llmTz">-</b>
+                <br>本窗口已消费：<b id="llmWinUsed">-</b> ｜ 当日已消费：<b id="llmDayUsed">-</b>
+                <br>最近处理：<b id="llmLast">-</b> ｜ 状态更新：<b id="llmStateAt">-</b>
+            </div>
+        </div>
+    </div>
+    <div class="card q-card"><div class="card-header"><h3>邮件队列</h3></div>
+        <div class="card-body">
+            <div class="kv" style="margin-bottom:6px;"><b>量表链路</b></div>
+            <div style="display:flex;gap:18px;">
+                <div><div class="stat-label">待发</div><div class="q-num orange" id="sqPending">-</div></div>
+                <div><div class="stat-label">已发</div><div class="q-num green" id="sqSent">-</div></div>
+                <div><div class="stat-label">失败</div><div class="q-num red" id="sqFailed">-</div></div>
+            </div>
+            <div class="kv" style="margin:12px 0 6px;"><b>饮食链路</b></div>
+            <div style="display:flex;gap:18px;">
+                <div><div class="stat-label">待发</div><div class="q-num orange" id="dqPending">-</div></div>
+                <div><div class="stat-label">已发</div><div class="q-num green" id="dqSent">-</div></div>
+                <div><div class="stat-label">失败</div><div class="q-num red" id="dqFailed">-</div></div>
+            </div>
+        </div>
+    </div>
+    <div class="card q-card"><div class="card-header"><h3>Webhook 回调健康</h3></div>
+        <div class="card-body">
+            <div class="kv">
+                当前模式：<b id="whMode">-</b><br>
+                累计收到：<b id="whRecv">-</b> ｜ 新入行：<b id="whNew">-</b><br>
+                失败：<b id="whFail">-</b> ｜ 重试积压：<b id="whRetry">-</b><br>
+                最近回调：<b id="whLast">-</b><br>
+                静默阈值：<b id="whThreshold">-</b> 分钟
+            </div>
+            <div class="kv" style="margin-top:8px;color:#888;">
+                平台不支持回调时自动回落定时拉取；此处模式显示 <code>timer_only</code> 属正常。
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+async function loadQueues() {
+    var r = await fetch('/api/queues'); var d = await r.json();
+    if (d.error) { alert('加载失败: ' + d.error); return; }
+    var l = d.llm || {};
+    document.getElementById('llmPending').textContent = l.pending;
+    document.getElementById('llmProc').textContent = l.processing;
+    document.getElementById('llmDone').textContent = l.done;
+    document.getElementById('llmFailed').textContent = l.failed;
+    document.getElementById('llmMode').textContent = l.mode;
+    document.getElementById('llmWindow').textContent = l.window || '(未设置)';
+    document.getElementById('llmTz').textContent = l.timezone || '-';
+    document.getElementById('llmWinUsed').textContent = l.window_consumed;
+    document.getElementById('llmDayUsed').textContent = l.day_consumed;
+    document.getElementById('llmLast').textContent = l.last_processed_at || '从未';
+    document.getElementById('llmStateAt').textContent = l.state_updated_at || '-';
+    document.getElementById('llmWaitBadge').style.display = l.waiting_window ? '' : 'none';
+    if (l.reason) { document.getElementById('llmWaitBadge').title = l.reason; }
+
+    var e = d.email || {};
+    var s = e.survey || {}, dd = e.diet || {};
+    document.getElementById('sqPending').textContent = s.pending;
+    document.getElementById('sqSent').textContent = s.sent;
+    document.getElementById('sqFailed').textContent = s.failed;
+    document.getElementById('dqPending').textContent = dd.pending;
+    document.getElementById('dqSent').textContent = dd.sent;
+    document.getElementById('dqFailed').textContent = dd.failed;
+
+    var w = d.webhook || {};
+    document.getElementById('whMode').textContent = w.survey_mode;
+    document.getElementById('whRecv').textContent = w.survey_received_total;
+    document.getElementById('whNew').textContent = w.survey_new_rows_total;
+    document.getElementById('whFail').textContent = w.survey_failed_total;
+    document.getElementById('whRetry').textContent = w.survey_retry_pending;
+    document.getElementById('whLast').textContent = w.survey_last_received_at || '从未';
+    document.getElementById('whThreshold').textContent = w.timer_only_after_minutes;
+}
+document.addEventListener('DOMContentLoaded', loadQueues);
+setInterval(loadQueues, 15000);
+</script>
+{% endblock %}

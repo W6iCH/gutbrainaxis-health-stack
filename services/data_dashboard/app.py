@@ -17,6 +17,7 @@ from flask_cors import CORS
 import json, csv, io
 from datetime import datetime
 import data as db
+import ops
 
 app = Flask(__name__)
 CORS(app)
@@ -72,12 +73,33 @@ def export_center():
 def completion():
     rows = db.get_completion_table()
     summary = db.get_completion_summary()
-    from datetime import datetime, timedelta
     update_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    # Generate diet date labels (7/6 to 7/29)
-    start = datetime(2026, 7, 6)
-    diet_dates = [(start + timedelta(days=i)).strftime('%-m/%d') for i in range(24)]
+    # 饮食打卡日期标签由研究设计日历推导（不再硬编码 2026-07-06 起 24 天）
+    diet_dates = db.DIET_DATE_LABELS or ['%d/%d' % (7, 6 + i) for i in range(24)]
     return render_template('completion.html', rows=rows, summary=summary, update_time=update_time, diet_dates=diet_dates, version='2.4')
+
+# ── D：运行与质量（队列 / 依从性 / 数据质量 / 系统健康）─────────────────
+
+@app.route('/queues')
+def queues_page():
+    return render_template('queues.html',
+                           update_time=datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+
+@app.route('/adherence')
+def adherence_page():
+    days = request.args.get('days', 30, type=int)
+    return render_template('adherence.html', days=days,
+                           update_time=datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+
+@app.route('/quality')
+def quality_page():
+    return render_template('quality.html',
+                           update_time=datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+
+@app.route('/system')
+def system_page():
+    return render_template('system.html',
+                           update_time=datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
 
 # =========================================================================
 # API: DASHBOARD
@@ -442,6 +464,102 @@ def api_export_combined():
         return jsonify({'error': str(e)}), 500
 
 # =========================================================================
+# API: RUN & QUALITY (D)
+# =========================================================================
+
+def _csv_response(rows, filename):
+    """把 [{...}] 导出为 CSV（UTF-8 BOM，Excel 友好）。"""
+    output = io.StringIO()
+    if rows:
+        writer = csv.DictWriter(output, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        for r in rows:
+            writer.writerow(r)
+    return Response('\ufeff' + output.getvalue(),
+                    mimetype='text/csv; charset=utf-8',
+                    headers={'Content-Disposition': f'attachment;filename={filename}'})
+
+
+def _rows_response(rows, filename, fmt):
+    if fmt == 'json':
+        return Response(json.dumps(rows, ensure_ascii=False, default=str),
+                        mimetype='application/json',
+                        headers={'Content-Disposition': f'attachment;filename={filename.replace(".csv", ".json")}'})
+    return _csv_response(rows, filename)
+
+
+@app.route('/api/queues')
+def api_queues():
+    try:
+        return jsonify(ops.queue_overview())
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/adherence')
+def api_adherence():
+    try:
+        days = request.args.get('days', 30, type=int)
+        end = request.args.get('end')
+        return jsonify(ops.adherence_series(days=days, end=end))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/quality')
+def api_quality():
+    try:
+        return jsonify(ops.data_quality())
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/system/health')
+def api_system_health():
+    try:
+        return jsonify(ops.system_health())
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/export/queues')
+def api_export_queues():
+    try:
+        return _rows_response(ops.queue_rows(), 'queue_status.csv',
+                              request.args.get('format', 'csv'))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/export/adherence')
+def api_export_adherence():
+    try:
+        days = request.args.get('days', 30, type=int)
+        return _rows_response(ops.adherence_rows(ops.adherence_series(days=days)),
+                              'adherence_matrix.csv', request.args.get('format', 'csv'))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/export/quality')
+def api_export_quality():
+    try:
+        return _rows_response(ops.quality_rows(), 'data_quality.csv',
+                              request.args.get('format', 'csv'))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/export/system')
+def api_export_system():
+    try:
+        return _rows_response(ops.health_rows(), 'system_health.csv',
+                              request.args.get('format', 'csv'))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# =========================================================================
 # Health check
 # =========================================================================
 
@@ -474,4 +592,6 @@ def health():
     return jsonify({'status': 'ok', 'version': '2.0'})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8090, debug=False)
+    # 端口来自 app.yaml（services.data_dashboard.port），缺省 8090
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT_DATA_DASHBOARD', '8090')),
+            debug=False)

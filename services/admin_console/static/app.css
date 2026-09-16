@@ -321,3 +321,16 @@ tr:nth-child(even) { background: rgba(255,255,255,.015); }
 .diff-add { background: rgba(34,197,94,.15); color: #6ee7b7; }
 .diff-remove { background: rgba(239,68,68,.15); color: #fca5a5; }
 .diff-equal { color: var(--tx3); }
+
+/* ── 调度页（C）── */
+.badge-ok { background: rgba(34,197,94,.15); color: #6ee7b7; }
+.badge-warn { background: rgba(234,179,8,.15); color: #fde047; }
+.sched-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.sched-table th, .sched-table td { padding: 5px 8px; border-bottom: 1px solid rgba(148,163,184,.16); text-align: left; }
+.sched-table th { color: #94a3b8; font-weight: 600; }
+.sched-key code { font-size: 11.5px; color: #93c5fd; }
+.sched-input { width: 100%; min-width: 90px; padding: 4px 6px; border-radius: 4px;
+  border: 1px solid rgba(148,163,184,.35); background: rgba(15,23,42,.55); color: #e2e8f0; }
+.sched-unit { color: #94a3b8; white-space: nowrap; }
+.sched-eff { color: #cbd5e1; }
+.sched-apply { color: #94a3b8; font-size: 11.5px; }

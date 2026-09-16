@@ -3,15 +3,19 @@
 # ============================================================================
 #  本文件是**所有可配置项的唯一真源**。安装脚本会把它复制到
 #      /etc/research-app/app.yaml
-#  再由 tools/render_env.py 渲染出 systemd 使用的环境文件
+#  再由 tools/appconfig.py --render-env 渲染出 systemd 使用的环境文件
 #      /etc/research-app/env
+#  并由 tools/appconfig.py --render-timers 把周期/时点渲染进 systemd timer。
 #
 #  规则：
-#    1. 真实密钥**不写在本文件**。凡 `"${VAR}"` 形式者，运行期从
+#    1. 真实密钥**不写在本文件**。凡 `${VAR}` 形式者，运行期从
 #       /etc/research-app/secrets.env（0600）或进程环境变量解析。
 #    2. 占位符（__CHANGE_ME__ / <...> / example.com）在启动自检中会被判为「未配置」。
-#    3. 校验：`python3 tools/appconfig.py --check`（启动即校验；缺项/类型错/占位符 → 报错并指出位置）
+#    3. 校验：`python3 tools/appconfig.py --check`
+#       （启动即校验；缺项/类型错/占位符 → 报错并指出位置）
 #    4. 本文件随仓库发布；真实配置（/etc/research-app/app.yaml 与 secrets.env）不入库。
+#    5. **改配置即改行为**：所有周期/时点/窗口/超时都在本文件；
+#       完整时间项清单见 docs/时间项配置总表.md。
 # ============================================================================
 
 version: 1
@@ -34,24 +38,49 @@ site:
   nginx_sites_dir: /etc/nginx/sites-available
   nginx_enabled_dir: /etc/nginx/sites-enabled
   nginx_log_dir: /var/log/nginx
+  # 子域名前缀（Nginx 模板与 URL 拼接用；与 DNS A 记录一致）
+  subdomain_admin: admin
+  subdomain_api: api
+  subdomain_svc: svc
+  subdomain_tools: tools
+  subdomain_data: data
+  subdomain_www: www
+  subdomain_survey_hook: survey-hook    # 量表 Webhook 专用子域（平台只允许填域名时用）
+
+# ── 2c. 日志 ──────────────────────────────────────────────────────────────
+logging:
+  rotate_days: 14                      # 日志保留天数（install.sh 写入 logrotate 配置）
+  format: json                         # json|text（服务结构化日志格式）
+
+# ── 2b. HTTP 全局默认（各服务可被更具体项覆盖）─────────────────────────────
+http:
+  default_timeout_seconds: 15          # 出网请求默认超时（秒）
+  default_max_body_bytes: 1048576      # 入站请求体默认上限（字节，1 MiB）
 
 # ── 3. 各服务监听端口与入口 ────────────────────────────────────────────────
 services:
   survey_feedback:
     port: 8000
-    port_alt: 8080                     # 兼容监听（可留空）
+    port_alt: 8080                     # 兼容监听（0 = 关闭）
     dir: sjtu_survey_pro
     entry: feedback_server.py
     enabled: true
+    request_timeout_seconds: 30        # 单请求处理上限（秒）
   diet_feedback:
     port: 8001
     dir: diet_survey
     entry: diet_feedback_server.py
     enabled: true
+    request_timeout_seconds: 30
   diet_webhook:
     port: 9876
     dir: diet_survey
     entry: webhook_listener.py
+    enabled: true
+  survey_webhook:                      # 新增：量表问卷 webhook（A）
+    port: 9877
+    dir: sjtu_survey_pro
+    entry: survey_webhook_listener.py
     enabled: true
   diet_llm_queue:
     port: 0                            # 0 = 无监听端口（常驻 worker）
@@ -76,6 +105,7 @@ database:
   diet_db: /opt/gutbrainaxis/diet_survey/diet_data.db
   exercise_db: /opt/gutbrainaxis/exercise_survey/exercise_data.db
   roster: /opt/gutbrainaxis/data_dashboard/roster.json
+  busy_timeout_seconds: 10             # SQLite 锁等待上限（秒），避免瞬时锁冲突报错
 
 # ── 5. SMTP（问卷反馈 / 饮食反馈 / 每日报告 共用）───────────────────────────
 smtp:
@@ -90,6 +120,9 @@ smtp:
   sender_name: Research Feedback System
   admin_email: ${SMTP_ADMIN_EMAIL}     # 必填·告警/日报收件人
   cc_email: ""                         # 可选·日报抄送
+  timeout_seconds: 30                  # SMTP 连接/发送超时（秒）
+  send_retry_max_attempts: 3           # 发送失败重试次数（0=不重试）
+  send_retry_backoff_seconds: 60       # 重试退避基数（秒）
 
 # ── 6. 告警邮件（scripts/send_alert.py / health_monitor.py）────────────────
 alert:
@@ -101,50 +134,130 @@ alert:
   sender_email: ${ALERT_FROM}
   sender_name: Research Task Monitor
   to: ${ALERT_TO}
-  cooldown_minutes: 15                 # 同一告警去重冷却
+  cooldown_minutes: 15                 # 同一告警去重冷却（分钟）
+  severity_threshold: warning          # info|warning|critical 低于此级别不发
+  quiet_hours_start: ""                # 静默时段开始（留空=继承 schedule.quiet_hours_start）
+  quiet_hours_end: ""                  # 静默时段结束（留空=继承 schedule.quiet_hours_end）
+  stale_data_minutes: 90               # 数据滞后告警阈值（分钟）
 
 # ── 7. LLM（主 + 备）──────────────────────────────────────────────────────
 # 密钥一律用**未加引号的 ${VAR} 引用**：
 #   · YAML 中 ${...} 是合法 plain scalar，同样会被 appconfig 解析为引用；
-#   · 不加引号可避免被发布前脱敏扫描器误判为「硬编码 api_key 赋值」。
+#   · 不加引号可避免被发布前脱敏扫描器误判为「硬编码密钥赋值」。
 # ⚠️ 绝不在此写入真实密钥。
 llm:
   primary:
     base_url: https://models.sjtu.edu.cn/api/v1
     model: deepseek-reasoner
     api_keys: ${LLM_API_KEYS}          # 逗号分隔，支持多 Key 轮换
-    timeout_seconds: 120
-    max_retries: 3
+    timeout_seconds: 120               # 单次调用超时（秒）
+    max_retries: 3                     # 失败重试次数
+    retry_backoff_seconds: 5           # 重试退避基数（秒）
+    temperature: 0.1                   # 采样温度（0-2；研究场景建议低温度）
+    max_tokens: 4096                   # 单次回复 token 上限
   backup:
     enabled: true
     base_url: https://api.deepseek.com
     model: deepseek-v4-flash
     api_key: ${LLM_BACKUP_API_KEY}
     timeout_seconds: 120
+    temperature: 0.1
+  prompt_file: prompts/diet_advice.txt # 系统提示词文件（可按研究需要替换）
 
-# ── 8. 三个问卷平台（令牌 + 分页 + 拉取周期）──────────────────────────────
+# ── 7c. 计分相关（个性化）─────────────────────────────────────────────
+scoring:
+  reverse_items_enabled: true          # 是否施加反向计分（关闭仅供敏感性分析）
+  custom_bands_path: ""                # 自定义分档切点文件（留空=用内置权威切点）
+  strict: true                         # 未识别作答是否直接报错（true=报错，false=审计模式）
+
+# ── 7d. 研究设计（干预时间轴 / 目标完成度 / 名册规则）─────────────────
+#  部署个性化数据的**主体**放在 study.calendar_path 指向的日历文件里，
+#  由 services/common/lib_study.py 读取（有内置默认值，缺文件不报错）。
+study:
+  calendar_path: /etc/research-app/study_calendar.yaml
+  planned_id_prefixes: "5,1"           # 名册「计划内」学号前缀（逗号分隔）
+  total_planned_fallback: 248          # 名册缺失时的目标总人数
+
+# ── 7e. 邮件投递路由（域名相关，随部署而变）──────────────────────────
+email:
+  mx_domain: sjtu.edu.cn               # 校内直投域名（MX 路由）
+  mx_host: mx01.sjtu.edu.cn            # 直投 MX 主机
+  message_id_domain: sjtu.edu.cn       # Message-ID 后缀域名
+
+# ── 7f. 数据导出（匿名化）─────────────────────────────────────────
+export:
+  salt: ${EXPORT_SALT}                 # 学号匿名化盐值（可选·密钥；留空用内置默认）
+
+# ── 7b. LLM 分析调度（B：把批量分析安排到 API 低谷）────────────────────────
+# mode:
+#   realtime = 入队即消费（旧行为，默认）
+#   offpeak  = 仅在窗口内消费；窗口外只入队（排队不丢）
+#   hybrid   = 窗口内全速；窗口外按 hybrid_daytime_max 少量消费（避免长队列饿死）
+analysis:
+  mode: realtime
+  window_start: "23:00"                # 窗口开始（HH:MM，可跨天，如 23:00→06:00）
+  window_end: "06:00"                  # 窗口结束
+  timezone: Asia/Shanghai              # 窗口判定所用时区
+  workdays: "1,2,3,4,5,6,7"            # 生效星期（1=周一 … 7=周日）
+  throttle_seconds: 3                  # 每个任务之间的间隔（秒，限流）
+  concurrency: 1                       # 并发 worker 数（受 API 速率限制，建议 1）
+  max_per_window: 0                    # 单窗口最多处理任务数（0=不限）
+  hybrid_daytime_max: 20               # hybrid 模式下窗口外每日最多消费数
+  idle_sleep_seconds: 2                # 队列空时轮询间隔（秒）
+  window_check_seconds: 30             # 窗口状态检查间隔（秒），决定挂起/恢复灵敏度
+
+# ── 8. 三个问卷平台（令牌 + 分页 + 拉取周期 + 超时）────────────────────────
 survey_platforms:
   scale:
     token: ${WJX_SURVEY_TOKEN}
+    api_base: https://wj.sjtu.edu.cn/api/v1/public/result
+    survey_id: "0"                    # 问卷 ID（平台侧编号；未用到的接口可留 0）
     page_size: 50
-    fetch_interval_minutes: 60
+    fetch_interval_minutes: 60         # 定时拉取周期（webhook 为主、此为兜底）
+    fetch_timeout_seconds: 30          # 单次 API 请求超时（秒）
   diet:
     token: ${WJX_DIET_TOKEN}
+    api_base: https://wj.sjtu.edu.cn/api/v1/public/result
+    survey_id: "0"
     page_size: 10
     fetch_interval_minutes: 15
+    fetch_timeout_seconds: 30
   exercise:
     token: ${WJX_EXERCISE_TOKEN}
+    api_base: https://wj.sjtu.edu.cn/api/v1/public/result
+    survey_id: "0"
     page_size: 50
     fetch_interval_minutes: 15
+    fetch_timeout_seconds: 30
 
-# ── 9. 调度周期（install.sh 用它渲染 systemd timer）───────────────────────
+# ── 8b. Webhook 接收（A：量表即时触发；饮食同用）──────────────────────────
+webhook:
+  enabled: true
+  secret: ${WEBHOOK_SECRET}            # 可选·共享密钥（留空=不校验；建议配置）
+  max_body_bytes: 1048576              # 请求体上限（字节，1 MiB）
+  rate_limit_per_minute: 120           # 单 IP 每分钟请求上限
+  retry_max_attempts: 5                # 本地失败重试最大次数
+  retry_backoff_seconds: 60            # 重试退避基数（秒）
+  retry_poll_seconds: 30               # 重试队列轮询间隔（秒）
+  timer_only_after_minutes: 180        # 超过此时长无回调 → 判定「平台不支持/回调失联」，回落定时
+
+# ── 9. 调度周期与静默时段（install.sh 用它渲染 systemd timer）──────────────
 schedule:
-  survey_sync_minutes: 60
-  diet_sync_minutes: 15
-  exercise_sync_minutes: 15
-  health_monitor_minutes: 30
-  daily_report_at: "08:30"             # 每日报告（HH:MM，本地时区）
-  backup_at: "03:00"                   # 每日备份
+  survey_sync_minutes: 60              # 量表兜底拉取周期（分钟）
+  diet_sync_minutes: 15                # 饮食兜底拉取周期（分钟）
+  exercise_sync_minutes: 15            # 运动兜底拉取周期（分钟）
+  health_monitor_minutes: 30           # 健康巡检周期（分钟）
+  daily_report_at: "08:30"             # 每日报告时刻（HH:MM，本地时区）
+  daily_report_retry_minutes: 30       # 日报失败后的重试间隔（分钟）
+  backup_at: "03:00"                   # 每日备份时刻
+  timer_randomized_delay_seconds: 60   # timer 随机抖动（秒，避免整点风暴）
+  timer_accuracy_seconds: 60           # timer 精度（秒）
+  timer_persistent: true               # 停机期间错过的触发是否补跑
+  quiet_hours_start: "22:30"           # 静默时段开始（留空=不启用）
+  quiet_hours_end: "07:00"             # 静默时段结束
+  quiet_hours_suppress_alerts: true    # 静默时段不发非紧急告警
+  quiet_hours_skip_sync: true          # 静默时段跳过定时拉取（webhook 仍实时接收）
+  quiet_hours_skip_backup: false       # 静默时段是否跳过备份（备份在凌晨，一般 false）
 
 # ── 10. 备份策略 ──────────────────────────────────────────────────────────
 backup:
@@ -154,12 +267,16 @@ backup:
   remote_enabled: false                # 是否 rclone 上传远端
   rclone_remote: ""                    # 例：onedrive:opt-backup
   rclone_log: /var/log/rclone-backup.log
+  timeout_minutes: 30                  # 单次备份超时（分钟）
+  verify_after: true                   # 备份后校验 tar 完整性与可读性
 
 # ── 11. 自检（tools/selfcheck.py 与控制台「自检」页共用）──────────────────
 selfcheck:
   enabled: true
-  http_timeout_seconds: 5
+  http_timeout_seconds: 5              # HTTP 探活超时（秒）
   external_probe: true                 # 是否探测问卷 API / SMTP / LLM 可达性
   external_probe_interval_seconds: 7   # 外部探测间隔（限流保护，勿调小）
+  external_probe_timeout_seconds: 8    # 单次外部探测超时（秒）
   db_write_test: true                  # 数据库写测试（回滚，不留痕）
-  min_free_disk_gb: 2
+  min_free_disk_gb: 2                  # 磁盘余量告警阈值（GB）
+  cache_ttl_seconds: 60                # 自检结果缓存时长（秒，0=不缓存）
