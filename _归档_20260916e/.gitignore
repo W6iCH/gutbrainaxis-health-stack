@@ -19,6 +19,7 @@ backups/
 survey_data.db*
 diet_data.db*
 exercise_data.db*
+microbiome_data.db*
 survey_data.db.v1.bak
 sjtu_survey_data*.json
 population_stats.json
@@ -30,6 +31,10 @@ logs/selfcheck.json
 _测试证据_*/
 exports/
 export/
+
+# 菌群导入归档（含科研原始数据）
+microbiome/import/processed/
+microbiome/import/failed/
 
 # ─────────────────────────────────────────────────────────────
 #  日志 —— 永不入库

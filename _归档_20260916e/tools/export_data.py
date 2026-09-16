@@ -3,7 +3,7 @@
 """
 export_data.py — 一键数据导出（CSV / JSON）
 =============================================================================
-把三个业务库导出为 CSV 与 JSON，供研究者离线分析。
+把三个业务库 + 菌群库导出为 CSV 与 JSON，供研究者离线分析。
 
 要点
 ----
@@ -48,7 +48,8 @@ DROP_COLUMNS = {"raw_data", "analysis", "responses"}
 
 DB_KEYS = [("survey_db", "问卷", "sjtu_survey_pro"),
            ("diet_db", "饮食", "diet_survey"),
-           ("exercise_db", "运动", "exercise_survey")]
+           ("exercise_db", "运动", "exercise_survey"),
+           ("microbiome_db", "菌群", "microbiome")]
 
 
 def _anon(value, salt: str) -> str:

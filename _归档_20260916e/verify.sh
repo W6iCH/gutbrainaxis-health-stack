@@ -65,7 +65,8 @@ if [ -z "$SELFCHECK" ]; then
     diet_survey/diet_llm_queue.py \
     exercise_survey/exercise_sync_cron.py \
     admin_console/app.py \
-    data_dashboard/app.py; do
+    data_dashboard/app.py \
+    microbiome/import_microbiome.py; do
     if [ -f "$INSTALL_ROOT/$f" ]; then echo -e "  ${GREEN}✅${NC} 入口 $f"; else echo -e "  ${RED}❌${NC} 缺失 $f"; FAIL=$((FAIL+1)); fi
   done
   echo ""

@@ -75,6 +75,7 @@ database:
   survey_db: /opt/gutbrainaxis/sjtu_survey_pro/survey_data.db
   diet_db: /opt/gutbrainaxis/diet_survey/diet_data.db
   exercise_db: /opt/gutbrainaxis/exercise_survey/exercise_data.db
+  microbiome_db: /opt/gutbrainaxis/microbiome/microbiome_data.db
   roster: /opt/gutbrainaxis/data_dashboard/roster.json
 
 # ── 5. SMTP（问卷反馈 / 饮食反馈 / 每日报告 共用）───────────────────────────
@@ -145,6 +146,7 @@ schedule:
   health_monitor_minutes: 30
   daily_report_at: "08:30"             # 每日报告（HH:MM，本地时区）
   backup_at: "03:00"                   # 每日备份
+  microbiome_import_minutes: 60        # 二期菌群数据导入轮询
 
 # ── 10. 备份策略 ──────────────────────────────────────────────────────────
 backup:
@@ -163,3 +165,14 @@ selfcheck:
   external_probe_interval_seconds: 7   # 外部探测间隔（限流保护，勿调小）
   db_write_test: true                  # 数据库写测试（回滚，不留痕）
   min_free_disk_gb: 2
+
+# ── 12. 二期菌群数据（宏基因组 / SCFA / 炎症因子）预留存储 ────────────────
+microbiome:
+  enabled: true
+  dir: /opt/gutbrainaxis/microbiome
+  import_dir: /opt/gutbrainaxis/microbiome/import   # 投递目录：放 CSV 即被导入
+  omics_types:
+    metagenome: "宏基因组"
+    scfa: "短链脂肪酸"
+    inflammation: "炎症因子"
+  allow_extra_columns: true            # 未知列进 extras JSON，不丢数据

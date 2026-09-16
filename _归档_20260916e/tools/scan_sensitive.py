@@ -43,9 +43,6 @@ SKIP_DIRS = {
     ".pytest_cache", ".ruff_cache", ".trash", "dist", "build", ".idea",
     ".vscode", "site-packages",
 }
-# 历史留档目录（`_归档_*`）：存放已被替换/删除的旧文件快照，不在服务链路中。
-# 扫描它们只会产生噪音（且旧报告副本自带本机绝对路径，会误判为阻断项），故一并剪枝。
-ARCHIVE_PREFIX = "_归档_"
 MAX_BYTES = 4 * 1024 * 1024  # 单个文件最多读 4MB
 
 # ── 规则表 ─────────────────────────────────────────────────────────────────
@@ -194,8 +191,7 @@ def _allow_opt_path(rel, line):
 
 def scan_content(root, findings):
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames
-                        if d not in SKIP_DIRS and not d.startswith(ARCHIVE_PREFIX)]
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
         for fn in filenames:
             full = os.path.join(dirpath, fn)
             rel = os.path.relpath(full, root)
@@ -266,8 +262,8 @@ def scan_dirs(root, findings):
                 rel = os.path.relpath(os.path.join(dirpath, d), root)
                 level = "WARN" if d in SKIP_DIRS else "BLOCKER"
                 findings.append(Finding("A", level, FS_DIR_BLOCKERS[d], rel, 0, d))
-            if d in SKIP_DIRS or d.startswith(ARCHIVE_PREFIX):
-                continue          # 剪枝：非发布集/历史留档，不深入
+            if d in SKIP_DIRS:
+                continue          # 剪枝：非发布集，不深入
             keep.append(d)
         dirnames[:] = keep
     return findings

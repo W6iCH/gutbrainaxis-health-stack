@@ -53,6 +53,7 @@
     "database.survey_db": { "type": "path", "required": true },
     "database.diet_db": { "type": "path", "required": true },
     "database.exercise_db": { "type": "path", "required": true },
+    "database.microbiome_db": { "type": "path", "required": true },
     "database.roster": { "type": "path", "required": true },
 
     "smtp.use_ssl": { "type": "bool", "required": true },
@@ -104,6 +105,7 @@
     "schedule.health_monitor_minutes": { "type": "int", "required": true, "min": 5 },
     "schedule.daily_report_at": { "type": "str", "required": true },
     "schedule.backup_at": { "type": "str", "required": true },
+    "schedule.microbiome_import_minutes": { "type": "int", "required": true, "min": 1 },
 
     "backup.enabled": { "type": "bool", "required": true },
     "backup.dir": { "type": "path", "required": true },
@@ -117,6 +119,12 @@
     "selfcheck.external_probe": { "type": "bool", "required": true },
     "selfcheck.external_probe_interval_seconds": { "type": "int", "required": true, "min": 1 },
     "selfcheck.db_write_test": { "type": "bool", "required": true },
-    "selfcheck.min_free_disk_gb": { "type": "float", "required": true, "min": 0 }
+    "selfcheck.min_free_disk_gb": { "type": "float", "required": true, "min": 0 },
+
+    "microbiome.enabled": { "type": "bool", "required": true },
+    "microbiome.dir": { "type": "path", "required": true },
+    "microbiome.import_dir": { "type": "path", "required": true },
+    "microbiome.allow_extra_columns": { "type": "bool", "required": true },
+    "microbiome.omics_types.*": { "type": "str", "required": false }
   }
 }

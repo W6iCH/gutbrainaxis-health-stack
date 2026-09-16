@@ -73,11 +73,12 @@ DEFAULT_UNITS_TIMER = [
     "research-survey-sync.timer", "research-diet-sync.timer",
     "research-exercise-sync.timer", "research-health-monitor.timer",
     "research-rclone-backup.timer", "research-daily-report.timer",
+    "research-microbiome-import.timer",
 ]
 DEFAULT_TIMER_SERVICE = [
     "research-survey-sync", "research-diet-sync", "research-exercise-sync",
     "research-health-monitor", "research-rclone-backup",
-    "research-daily-report",
+    "research-daily-report", "research-microbiome-import",
 ]
 
 # 各数据库必须存在的表（schema 完整性）
@@ -85,6 +86,7 @@ REQUIRED_SCHEMA = {
     "survey_db": ["submissions", "email_log"],
     "diet_db": ["submissions"],
     "exercise_db": ["submissions"],
+    "microbiome_db": ["omics_samples", "omics_measurements", "omics_import_log"],
 }
 
 GROUPS = ["platform", "config", "paths", "systemd", "ports", "http",
@@ -416,7 +418,7 @@ def check_http(R, cfg):
 def check_database(R, cfg):
     write_test = bool(cfg.get("selfcheck.db_write_test", True))
     for key, cid in (("survey_db", "survey"), ("diet_db", "diet"),
-                     ("exercise_db", "exercise")):
+                     ("exercise_db", "exercise"), ("microbiome_db", "microbiome")):
         path = cfg.get(f"database.{key}")
         if not path:
             R.fail(f"db.{cid}.path", "database", f"{key} 路径", "未配置",

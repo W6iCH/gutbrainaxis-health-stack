@@ -314,7 +314,7 @@ ENV_MAP = {
     "site.nginx_sites_dir": "NGINX_SITES_DIR",
     "site.nginx_enabled_dir": "NGINX_ENABLED_DIR",
     "database.survey_db": "SURVEY_DB", "database.diet_db": "DIET_DB",
-    "database.exercise_db": "EXERCISE_DB",
+    "database.exercise_db": "EXERCISE_DB", "database.microbiome_db": "MICROBIOME_DB",
     "database.roster": "ROSTER_PATH",
     "smtp.host": "SMTP_HOST", "smtp.port": "SMTP_PORT",
     "smtp.ssl_host": "SMTP_SSL_HOST", "smtp.ssl_port": "SMTP_SSL_PORT",
@@ -339,6 +339,8 @@ ENV_MAP = {
     "survey_platforms.exercise.page_size": "WJX_EXERCISE_PAGE_SIZE",
     "backup.dir": "BACKUP_DIR", "backup.retention": "RETENTION",
     "backup.rclone_remote": "RCLONE_REMOTE", "backup.rclone_log": "BACKUP_LOG",
+    "microbiome.dir": "MICROBIOME_DIR", "microbiome.import_dir": "MICROBIOME_IMPORT_DIR",
+    "microbiome.enabled": "MICROBIOME_ENABLED",
     "selfcheck.enabled": "SELFCHECK_ENABLED",
     "selfcheck.min_free_disk_gb": "SELFCHECK_MIN_FREE_DISK_GB",
     "schedule.daily_report_at": "DAILY_REPORT_AT",
@@ -403,6 +405,7 @@ def render_timer_fragments(cfg: Dict[str, Any], out_dir: str) -> List[str]:
         "research-diet-sync.timer": f"*:0/{max(1, int(cfg.get('schedule.diet_sync_minutes', 15)))}",
         "research-exercise-sync.timer": f"*:0/{max(1, int(cfg.get('schedule.exercise_sync_minutes', 15)))}",
         "research-health-monitor.timer": f"*:0/{max(1, int(cfg.get('schedule.health_monitor_minutes', 30)))}",
+        "research-microbiome-import.timer": f"*:0/{max(1, int(cfg.get('schedule.microbiome_import_minutes', 60)))}",
     }
     daily = str(cfg.get("schedule.daily_report_at", "08:30"))
     backup = str(cfg.get("schedule.backup_at", "03:00"))

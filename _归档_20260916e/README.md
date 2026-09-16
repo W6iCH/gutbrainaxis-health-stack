@@ -46,9 +46,10 @@
 | 运动同步 | `services/exercise_survey` | `exercise_sync_cron.py` | — (timer) | 每 15 分钟增量同步 |
 | 数据看板 | `services/data_dashboard` | `app.py` | 8090 | 研究者看板 |
 | 每日报告 | `services/feedback` | `daily_report.py` | — (timer) | **本轮新增排程**，默认 08:30 |
+| 二期菌群 | `services/microbiome` | `import_microbiome.py` | — (timer) | 宏基因组/SCFA/炎症因子导入 |
 | 管理控制台 | `services/admin_console` | `app.py` | 9000 | 含「自检」页 |
 
-> 单元总数：**12 个 service + 6 个 timer**，逐条清单见 [`功能与进程清单.md`](功能与进程清单.md)。
+> 单元总数：**13 个 service + 7 个 timer**，逐条清单见 [`功能与进程清单.md`](功能与进程清单.md)。
 > 端口都可在统一配置 `config/app.yaml`（→ `/etc/research-app/app.yaml`）或控制台界面里改，
 > 控制台会做**冲突检测**并重新生成 Nginx 配置。
 
@@ -189,7 +190,7 @@ python3 tools/build_population_stats.py --raw <你的问卷.json> --out populati
 由 JSON Schema `config/app.schema.json` 做**启动即校验**。
 
 覆盖范围：端口 / 域名 / DNS / 反向代理、各服务目录与入口、数据库路径、SMTP 与告警、
-LLM（主+备）、三个问卷平台 Token、调度周期、日志级别、备份策略、自检开关。
+LLM（主+备）、三个问卷平台 Token、调度周期、日志级别、备份策略、自检开关、二期菌群存储。
 
 **密钥分离**：`app.yaml` 里只写 `"${SMTP_PASSWORD}"` 这类引用；真实值放在
 `/etc/research-app/secrets.env`（0600）。**仓库内零密钥**。
@@ -258,7 +259,25 @@ $PY tools/clear_mock_data.py --root /tmp/gba-test --report /tmp/clear.json
 
 ---
 
-## 12. 文档索引
+## 12. 二期菌群数据（本轮新增，预留）
+
+宏基因组 / SCFA / 炎症因子有独立库与导入接口，与一期数据解耦。
+
+```bash
+# 把 CSV 放进投递目录（每小时由 timer 自动导入）
+sudo cp your_data.csv /opt/gutbrainaxis/microbiome/import/
+# 或手动导入
+$PY services/microbiome/import_microbiome.py --file your_data.csv --omics-type scfa
+```
+
+* 支持**长表**（`sample_id,…,feature,value,unit`）与**宽表**（指标为列名）。
+* 幂等：同文件 sha256 去重；`(sample_id, omics_type)` / `(sample_id, feature, method)` 业务主键 upsert。
+* 未知列自动进 `extras` JSON，**不丢数据**；导入留痕在 `omics_import_log`。
+* 字段定义与保留策略： [`docs/数据模型与存储.md`](docs/数据模型与存储.md)。
+
+---
+
+## 13. 文档索引
 
 | 文档 | 内容 |
 |---|---|

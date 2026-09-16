@@ -187,7 +187,7 @@ PACKAGE_DIR="$(cd "$(dirname "$0")" && pwd)"
 SERVICES_SRC="$PACKAGE_DIR/services"
 if [ -d "$SERVICES_SRC" ]; then
   dry "cp -r $SERVICES_SRC/* $INSTALL_ROOT/"
-  echo "  ✅ 服务代码已复制（含公共库 common/）"
+  echo "  ✅ 服务代码已复制（含 microbiome/ 与 common/）"
 else
   die "services/ 目录不存在 ($SERVICES_SRC)"
 fi
@@ -214,7 +214,7 @@ if [ "$DRY_RUN" != "true" ]; then
 fi
 
 # 创建数据目录
-for d in data logs backups; do
+for d in data logs backups microbiome microbiome/import; do
   mkdir_dry -p "$INSTALL_ROOT/$d"
 done
 

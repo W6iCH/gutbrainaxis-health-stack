@@ -15,7 +15,7 @@ migrate.py — 升级迁移（数据库 schema / 配置 / 系统单元）
    * 校验 app.yaml（`appconfig --check`），失败则报告键位置
    * 保留 `.bak` 备份
 3. **系统单元迁移**：报告新旧 systemd 单元差异（如新增
-   `research-diet-sync` / `research-daily-report`），
+   `research-diet-sync` / `research-daily-report` / `research-microbiome-import`），
    提示需要执行的 enable 命令（不自动改系统，除非 `--apply-system`）。
 
 用法
@@ -45,7 +45,7 @@ sys.path.insert(0, HERE)
 
 import appconfig as AC                                   # noqa: E402
 
-CURRENT_VERSION = 2          # 与下面 MIGRATIONS 列表的最大版本保持一致
+CURRENT_VERSION = 3          # 与 config/app.schema.json 的 version 保持一致
 
 # ── 迁移定义： (version, 说明, [ (db_key, sql) ... ]) ─────────────────────
 # db_key 为 app.yaml 中的 database.* 键名。
@@ -57,11 +57,15 @@ MIGRATIONS = [
         ("survey_db", "ALTER TABLE submissions ADD COLUMN bmi_interpretation TEXT"),
         ("survey_db", "ALTER TABLE email_log ADD COLUMN fallback_sent INTEGER DEFAULT 0"),
     ]),
+    (3, "二期菌群库：omics_samples / omics_measurements / omics_import_log", [
+        ("microbiome_db", "__INIT_MICROBIOME__"),
+    ]),
 ]
 
 NEW_UNITS = [
     ("research-diet-sync.timer", "饮食问卷定时拉取（此前完全缺失 → 饮食数据只能靠 webhook）"),
     ("research-daily-report.timer", "每日报告（此前实现存在但从未排程）"),
+    ("research-microbiome-import.timer", "二期菌群数据导入"),
 ]
 
 LEGACY_UNITS = [
@@ -96,7 +100,7 @@ def _applied_versions(conn):
 
 def status(cfg: dict, db_key: str | None = None) -> dict:
     out = {"current_version": CURRENT_VERSION, "databases": {}, "pending": []}
-    for key in ("survey_db", "diet_db", "exercise_db"):
+    for key in ("survey_db", "diet_db", "exercise_db", "microbiome_db"):
         if db_key and key != db_key:
             continue
         path = cfg.get(f"database.{key}")
@@ -120,6 +124,14 @@ def status(cfg: dict, db_key: str | None = None) -> dict:
 
 def _run_sql(conn, sql: str, db_key: str, db_path: str = None):
     """执行一条迁移 SQL；已存在（duplicate column）视为成功。"""
+    if sql == "__INIT_MICROBIOME__":
+        mb = os.path.join(PKG_DIR, "services", "microbiome")
+        if os.path.isdir(mb) and mb not in sys.path:
+            sys.path.insert(0, mb)
+        import microbiome_database as MDB
+        MDB.init_db(db_path)
+        # init_db 用的是独立连接；本连接需重新读 schema 才能看到新表
+        return "初始化 microbiome schema"
     try:
         conn.execute(sql)
         return "ok"
@@ -141,7 +153,7 @@ def apply_migrations(cfg: dict, dry_run: bool, backup_first: bool,
         result["backups"].append({"script": backup_script, "rc": r.returncode,
                                   "tail": (r.stdout or "")[-200:]})
 
-    for key in ("survey_db", "diet_db", "exercise_db"):
+    for key in ("survey_db", "diet_db", "exercise_db", "microbiome_db"):
         path = cfg.get(f"database.{key}")
         if not path or not os.path.exists(path):
             result["skipped"].append({"db": key, "reason": f"库不存在: {path}"})

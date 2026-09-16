@@ -6,7 +6,7 @@ clear_mock_data.py — 清除全部模拟数据并**校验清除干净**
 职责
 ----
 1. 删除所有 `student_id` / `submission_id` / `email` 命中 `MOCK-` 前缀的记录
-   （问卷库、饮食库、运动库）。
+   （问卷库、饮食库、运动库、菌群库）。
 2. 清理模拟运行产生的队列与临时产物（`.llm_queue` 下由 seed 写入的 pending）。
 3. **校验清除干净**：逐表复查残留计数、逐目录复查残留文件；
    同时复查没有任何非 MOCK- 的真实数据被误删（前后真实行数不变）。
@@ -43,6 +43,8 @@ TARGET_DBS = [
     ("exercise_survey", "exercise_data.db",
      [("submissions", "student_id"), ("submissions", "submission_id"),
       ("submissions", "email")]),
+    ("microbiome", "microbiome_data.db",
+     [("omics_samples", "student_id"), ("omics_samples", "sample_id")]),
 ]
 
 # 需要清理的目录/文件（相对 root）
@@ -61,6 +63,7 @@ LOG_DIRS = [
     "exercise_survey/logs",
     "logs",
     "feedback/logs",
+    "microbiome/logs",
 ]
 
 

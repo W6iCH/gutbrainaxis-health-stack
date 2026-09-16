@@ -102,6 +102,14 @@ SERVICE_WHITELIST = {
         "workdir": "exercise_survey",
         "cmd": ["python3", "exercise_sync_cron.py"],
     },
+    "microbiome_import": {
+        "label": "菌群数据导入（定时）",
+        "unit": "research-microbiome-import.timer",
+        "kind": "timer",
+        "port": -1,
+        "workdir": "microbiome",
+        "cmd": ["python3", "import_microbiome.py"],
+    },
     "health_monitor": {
         "label": "健康巡检（定时）",
         "unit": "research-health-monitor.timer",
